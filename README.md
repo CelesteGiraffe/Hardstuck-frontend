@@ -133,6 +133,14 @@ Each part is kept small and isolated so the project is easy to maintain.
 
 3. (Later) Enable the BakkesMod plugin to start sending MMR logs automatically.
 
+Alternatively, run both components with one command:
+
+```
+npm start
+```
+
+This uses `concurrently` to launch the API server and the Vite dev server together so you can test the entire stack while developing.
+
 ## How to use
 
 1. **Launch the stack**
