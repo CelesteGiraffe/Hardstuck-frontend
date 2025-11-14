@@ -7,6 +7,14 @@ export type MmrRecord = {
   source: string;
 };
 
+export type MmrLogPayload = {
+  timestamp: string;
+  playlist: string;
+  mmr: number;
+  gamesPlayedDiff: number;
+  source?: string | null;
+};
+
 export type Skill = {
   id: number;
   name: string;
@@ -87,6 +95,19 @@ export async function getMmrRecords(filters: { playlist?: string; from?: string;
 
   const data = (await response.json()) as MmrRecord[];
   return data;
+}
+
+export async function createMmrLog(payload: MmrLogPayload): Promise<void> {
+  const response = await fetch(buildUrl('/api/mmr-log'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to log MMR');
+  }
 }
 
 export async function getSkills(): Promise<Skill[]> {

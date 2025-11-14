@@ -6,6 +6,7 @@
     getPresets,
     getSkillSummary,
     getMmrRecords,
+    createMmrLog,
   } from './api';
   import type { Session, SessionBlock, SkillSummary, MmrRecord } from './api';
 
@@ -31,11 +32,17 @@
   let mmrError: string | null = null;
   let playlists: string[] = [];
   let selectedPlaylist: string | null = null;
+  let manualMmrValue = '';
+  let manualGamesDiff = '1';
+  let manualSubmitting = false;
+  let manualError: string | null = null;
+  let manualSuccess: string | null = null;
+  let manualPlaylistValue = '';
 
-  onMount(async () => {
+  onMount(() => {
     loadSessions();
     loadSummary();
-    await initializeMmrChart();
+    initializeMmrChart();
   });
 
   async function loadSessions() {
@@ -78,15 +85,19 @@
     }
   }
 
-  async function loadMmrPlaylists() {
+  async function loadMmrPlaylists(preferredPlaylist?: string) {
     mmrError = null;
 
     try {
       const records = await getMmrRecords();
       const uniquePlaylists = Array.from(new Set(records.map((record) => record.playlist))).sort();
       playlists = uniquePlaylists;
-      if (!selectedPlaylist && playlists.length) {
+      if (preferredPlaylist && playlists.includes(preferredPlaylist)) {
+        selectedPlaylist = preferredPlaylist;
+      } else if (!selectedPlaylist && playlists.length) {
         selectedPlaylist = playlists[0];
+      } else if (selectedPlaylist && !playlists.includes(selectedPlaylist)) {
+        selectedPlaylist = playlists.length ? playlists[0] : null;
       }
     } catch (err) {
       mmrError = err instanceof Error ? err.message : 'Unable to load playlist data';
@@ -120,8 +131,51 @@
     }
   }
 
+  async function submitManualMmr(event: Event) {
+    event.preventDefault();
+    const playlistValue = playlists.length && selectedPlaylist ? selectedPlaylist : manualPlaylistValue.trim();
+    if (!playlistValue) {
+      manualError = 'Playlist is required';
+      return;
+    }
+
+    const mmrValue = Number(manualMmrValue);
+    const gamesDiffValue = Number(manualGamesDiff);
+
+    if (Number.isNaN(mmrValue) || Number.isNaN(gamesDiffValue)) {
+      manualError = 'MMR and games difference must be numbers';
+      return;
+    }
+
+    manualSubmitting = true;
+    manualError = null;
+    manualSuccess = null;
+
+    try {
+      await createMmrLog({
+        timestamp: new Date().toISOString(),
+        playlist: playlistValue,
+        mmr: mmrValue,
+        gamesPlayedDiff: gamesDiffValue,
+        source: 'manual',
+      });
+      manualSuccess = `MMR logged for ${playlistValue}`;
+      manualMmrValue = '';
+      manualGamesDiff = '1';
+      manualPlaylistValue = '';
+      await loadMmrPlaylists(playlistValue);
+      await loadMmrSeries();
+    } catch (err) {
+      manualError = err instanceof Error ? err.message : 'Unable to log MMR';
+    } finally {
+      manualSubmitting = false;
+    }
+  }
+
   function handlePlaylistChange(event: Event) {
     selectedPlaylist = (event.currentTarget as HTMLSelectElement).value;
+    manualError = null;
+    manualSuccess = null;
     loadMmrSeries();
   }
 
@@ -226,17 +280,60 @@
         <h2>MMR trend</h2>
         <p>Weight over time for a single playlist.</p>
       </div>
-      {#if playlists.length}
-        <label class="playlist-select">
-          Playlist
-          <select value={selectedPlaylist ?? ''} on:change={handlePlaylistChange}>
-            {#each playlists as playlist}
-              <option value={playlist}>{playlist}</option>
-            {/each}
-          </select>
-        </label>
-      {/if}
     </div>
+
+    <form class="manual-mmr-form" on:submit|preventDefault={submitManualMmr}>
+      <div class="manual-mmr-fields">
+        {#if playlists.length}
+          <label>
+            Playlist
+            <select value={selectedPlaylist ?? ''} on:change={handlePlaylistChange} disabled={manualSubmitting}>
+              {#each playlists as playlist}
+                <option value={playlist}>{playlist}</option>
+              {/each}
+            </select>
+          </label>
+        {:else}
+          <label>
+            Playlist
+            <input
+              placeholder="e.g. Standard"
+              type="text"
+              bind:value={manualPlaylistValue}
+              disabled={manualSubmitting}
+            />
+          </label>
+        {/if}
+        <label>
+          MMR
+          <input
+            type="number"
+            placeholder="2125"
+            step="1"
+            bind:value={manualMmrValue}
+            disabled={manualSubmitting}
+          />
+        </label>
+        <label>
+          Games played diff
+          <input
+            type="number"
+            placeholder="1"
+            step="1"
+            bind:value={manualGamesDiff}
+            disabled={manualSubmitting}
+          />
+        </label>
+      </div>
+      <button type="submit" class="btn-primary" disabled={manualSubmitting}>
+        {manualSubmitting ? 'Logging…' : 'Log MMR'}
+      </button>
+      {#if manualError}
+        <p class="badge offline manual-feedback">{manualError}</p>
+      {:else if manualSuccess}
+        <p class="badge success manual-feedback">{manualSuccess}</p>
+      {/if}
+    </form>
 
     {#if mmrLoading}
       <p>Loading MMR data…</p>
@@ -386,6 +483,63 @@
     word-break: break-word;
   }
 
+  .manual-mmr-form {
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    padding-bottom: 1rem;
+  }
+
+  .manual-mmr-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .manual-mmr-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    color: var(--muted-text, #7a7a7a);
+  }
+
+  .manual-mmr-fields input,
+  .manual-mmr-fields select {
+    padding: 0.45rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, #dcdcdc);
+    background: var(--input-background, #fff);
+    font-size: 0.95rem;
+  }
+
+  .manual-mmr-form .btn-primary {
+    border: none;
+    border-radius: 8px;
+    padding: 0.65rem 1.25rem;
+    background: #4a7cff;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+
+  .manual-mmr-form .btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .manual-feedback {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .badge.success {
+    background: #e0f2ff;
+    color: #0f172a;
+    border-color: rgba(15, 23, 42, 0.2);
+  }
+
   .history-mmr {
     background: var(--card-background, #fff);
     border-radius: 12px;
@@ -410,22 +564,6 @@
     margin: 0.25rem 0 0;
     color: var(--muted-text, #7a7a7a);
     font-size: 0.9rem;
-  }
-
-  .playlist-select {
-    font-size: 0.85rem;
-    color: var(--muted-text, #7a7a7a);
-    display: flex;
-    flex-direction: column;
-  }
-
-  .playlist-select select {
-    margin-top: 0.25rem;
-    padding: 0.35rem 0.5rem;
-    border-radius: 6px;
-    border: 1px solid var(--border-color, #dcdcdc);
-    background: var(--input-background, #fff);
-    color: inherit;
   }
 
   .mmr-chart-wrapper {
