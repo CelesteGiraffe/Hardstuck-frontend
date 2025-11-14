@@ -1,7 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getSessions, getSkills, getPresets, getSkillSummary } from './api';
-  import type { Session, SessionBlock, SkillSummary } from './api';
+  import {
+    getSessions,
+    getSkills,
+    getPresets,
+    getSkillSummary,
+    getMmrRecords,
+  } from './api';
+  import type { Session, SessionBlock, SkillSummary, MmrRecord } from './api';
 
   let sessions: Session[] = [];
   let selectedSession: Session | null = null;
@@ -13,9 +19,23 @@
   let summaryLoading = true;
   let summaryError: string | null = null;
 
+  const MMR_WINDOW_DAYS = 30;
+  const CHART_VIEW_WIDTH = 640;
+  const CHART_VIEW_HEIGHT = 220;
+  const CHART_PADDING = 32;
+  const CHART_INNER_WIDTH = CHART_VIEW_WIDTH - CHART_PADDING * 2;
+  const CHART_INNER_HEIGHT = CHART_VIEW_HEIGHT - CHART_PADDING * 2;
+
+  let mmrRecords: MmrRecord[] = [];
+  let mmrLoading = true;
+  let mmrError: string | null = null;
+  let playlists: string[] = [];
+  let selectedPlaylist: string | null = null;
+
   onMount(async () => {
     loadSessions();
     loadSummary();
+    await initializeMmrChart();
   });
 
   async function loadSessions() {
@@ -49,8 +69,72 @@
     }
   }
 
+  async function initializeMmrChart() {
+    await loadMmrPlaylists();
+    if (selectedPlaylist) {
+      await loadMmrSeries();
+    } else {
+      mmrLoading = false;
+    }
+  }
+
+  async function loadMmrPlaylists() {
+    mmrError = null;
+
+    try {
+      const records = await getMmrRecords();
+      const uniquePlaylists = Array.from(new Set(records.map((record) => record.playlist))).sort();
+      playlists = uniquePlaylists;
+      if (!selectedPlaylist && playlists.length) {
+        selectedPlaylist = playlists[0];
+      }
+    } catch (err) {
+      mmrError = err instanceof Error ? err.message : 'Unable to load playlist data';
+      mmrLoading = false;
+    }
+  }
+
+  async function loadMmrSeries() {
+    if (!selectedPlaylist) {
+      mmrRecords = [];
+      mmrLoading = false;
+      return;
+    }
+
+    mmrLoading = true;
+    mmrError = null;
+    const to = new Date();
+    const from = new Date(to);
+    from.setDate(to.getDate() - MMR_WINDOW_DAYS);
+
+    try {
+      mmrRecords = await getMmrRecords({
+        playlist: selectedPlaylist,
+        from: from.toISOString(),
+        to: to.toISOString(),
+      });
+    } catch (err) {
+      mmrError = err instanceof Error ? err.message : 'Unable to load MMR records';
+    } finally {
+      mmrLoading = false;
+    }
+  }
+
+  function handlePlaylistChange(event: Event) {
+    selectedPlaylist = (event.currentTarget as HTMLSelectElement).value;
+    loadMmrSeries();
+  }
+
   function formatDate(value: string) {
     return new Date(value).toLocaleString();
+  }
+
+  function formatChartDate(value?: string) {
+    if (!value) {
+      return '';
+    }
+
+    return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
   function totalDurationMinutes(session: Session) {
@@ -75,6 +159,35 @@
   function getBlockSkills(block: SessionBlock) {
     return block.skillIds.map((id) => skillMap[id] ?? `Skill #${id}`).join(', ');
   }
+
+  $: mmrChartPoints = mmrRecords
+    .map((record) => ({
+      ...record,
+      timestampValue: new Date(record.timestamp).getTime(),
+    }))
+    .sort((a, b) => a.timestampValue - b.timestampValue);
+
+  $: mmrChartMinTime = mmrChartPoints[0]?.timestampValue ?? 0;
+  $: mmrChartMaxTime = mmrChartPoints[mmrChartPoints.length - 1]?.timestampValue ?? 0;
+  $: mmrChartMinValue = mmrChartPoints.length
+    ? Math.min(...mmrChartPoints.map((point) => point.mmr))
+    : 0;
+  $: mmrChartMaxValue = mmrChartPoints.length
+    ? Math.max(...mmrChartPoints.map((point) => point.mmr))
+    : 0;
+  $: chartTimeRange = mmrChartMaxTime === mmrChartMinTime ? 1 : mmrChartMaxTime - mmrChartMinTime;
+  $: chartValueRange = mmrChartMaxValue === mmrChartMinValue ? 1 : mmrChartMaxValue - mmrChartMinValue;
+  $: chartCoordinates = mmrChartPoints.map((point) => {
+    const x = CHART_PADDING + ((point.timestampValue - mmrChartMinTime) / chartTimeRange) * CHART_INNER_WIDTH;
+    const y =
+      CHART_VIEW_HEIGHT -
+      CHART_PADDING -
+      ((point.mmr - mmrChartMinValue) / chartValueRange) * CHART_INNER_HEIGHT;
+    return { x, y, mmr: point.mmr, timestamp: point.timestamp };
+  });
+  $: chartPolyline = chartCoordinates.map((coord) => `${coord.x.toFixed(2)},${coord.y.toFixed(2)}`).join(' ');
+  $: chartStartLabel = chartCoordinates.length ? chartCoordinates[0].timestamp : '';
+  $: chartEndLabel = chartCoordinates.length ? chartCoordinates[chartCoordinates.length - 1].timestamp : '';
 </script>
 
 <section class="screen-content">
@@ -103,6 +216,63 @@
             <div class="chart-bar-label">{item.name}</div>
           </div>
         {/each}
+      </div>
+    {/if}
+  </div>
+
+  <div class="history-mmr">
+    <div class="history-mmr-header">
+      <div>
+        <h2>MMR trend</h2>
+        <p>Weight over time for a single playlist.</p>
+      </div>
+      {#if playlists.length}
+        <label class="playlist-select">
+          Playlist
+          <select value={selectedPlaylist ?? ''} on:change={handlePlaylistChange}>
+            {#each playlists as playlist}
+              <option value={playlist}>{playlist}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
+    </div>
+
+    {#if mmrLoading}
+      <p>Loading MMR data…</p>
+    {:else if mmrError}
+      <p class="badge offline">{mmrError}</p>
+    {:else if playlists.length === 0}
+      <p>No playlist records yet. Play a ranked match so the plugin can capture data.</p>
+    {:else if !selectedPlaylist}
+      <p>Select a playlist to view a trend.</p>
+    {:else if mmrRecords.length === 0}
+      <p>No MMR data for {selectedPlaylist} in the last {MMR_WINDOW_DAYS} days.</p>
+    {:else}
+      <div class="mmr-chart-wrapper">
+        <div class="mmr-chart-heading">
+          <p class="label">Weight over the last {MMR_WINDOW_DAYS} days</p>
+          <strong>{selectedPlaylist}</strong>
+        </div>
+        <svg
+          class="mmr-chart-plot"
+          viewBox={`0 0 ${CHART_VIEW_WIDTH} ${CHART_VIEW_HEIGHT}`}
+          role="img"
+          aria-label="MMR over time"
+        >
+          <polyline class="mmr-chart-line" points={chartPolyline} />
+          {#each chartCoordinates as coord}
+            <circle class="mmr-chart-point" cx={coord.x} cy={coord.y} r="3" />
+          {/each}
+        </svg>
+        <div class="mmr-chart-meta">
+          <span>{formatChartDate(chartStartLabel)}</span>
+          <span>{formatChartDate(chartEndLabel)}</span>
+        </div>
+        <div class="mmr-chart-scale">
+          <span>{mmrChartMaxValue} MMR</span>
+          <span>{mmrChartMinValue} MMR</span>
+        </div>
       </div>
     {/if}
   </div>
@@ -214,5 +384,93 @@
     color: var(--muted-text, #7a7a7a);
     max-width: 60px;
     word-break: break-word;
+  }
+
+  .history-mmr {
+    background: var(--card-background, #fff);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 10px 40px -20px rgba(0, 0, 0, 0.25);
+  }
+
+  .history-mmr-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .history-mmr h2 {
+    margin: 0;
+  }
+
+  .history-mmr p {
+    margin: 0.25rem 0 0;
+    color: var(--muted-text, #7a7a7a);
+    font-size: 0.9rem;
+  }
+
+  .playlist-select {
+    font-size: 0.85rem;
+    color: var(--muted-text, #7a7a7a);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .playlist-select select {
+    margin-top: 0.25rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, #dcdcdc);
+    background: var(--input-background, #fff);
+    color: inherit;
+  }
+
+  .mmr-chart-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .mmr-chart-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .mmr-chart-heading .label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: 0;
+  }
+
+  .mmr-chart-plot {
+    width: 100%;
+    height: auto;
+  }
+
+  .mmr-chart-line {
+    fill: none;
+    stroke: #4a7cff;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .mmr-chart-point {
+    fill: #4a7cff;
+    stroke: #fff;
+    stroke-width: 1;
+  }
+
+  .mmr-chart-meta,
+  .mmr-chart-scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    color: var(--muted-text, #7a7a7a);
   }
 </style>

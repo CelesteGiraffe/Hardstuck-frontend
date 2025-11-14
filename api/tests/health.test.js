@@ -82,6 +82,78 @@ describe('MMR log endpoints', () => {
   });
 });
 
+describe('MMR filters', () => {
+  it('filters records by playlist', async () => {
+    const base = {
+      timestamp: '2025-11-13T00:00:00Z',
+      playlist: 'Standard',
+      mmr: 2050,
+      gamesPlayedDiff: 2,
+      source: 'bakkes',
+    };
+
+    await request(app).post('/api/mmr-log').send(base).set('Content-Type', 'application/json');
+    await request(app)
+      .post('/api/mmr-log')
+      .send({ ...base, playlist: 'Doubles', timestamp: '2025-11-13T00:15:00Z' })
+      .set('Content-Type', 'application/json');
+
+    const response = await request(app).get('/api/mmr?playlist=Standard');
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0].playlist).toBe('Standard');
+  });
+
+  it('filters records by date range', async () => {
+    const payload = {
+      timestamp: '2025-11-13T00:00:00Z',
+      playlist: 'Standard',
+      mmr: 2100,
+      gamesPlayedDiff: 2,
+      source: 'bakkes',
+    };
+
+    await request(app).post('/api/mmr-log').send(payload).set('Content-Type', 'application/json');
+    await request(app)
+      .post('/api/mmr-log')
+      .send({ ...payload, timestamp: '2025-11-14T00:00:00Z', mmr: 2150 })
+      .set('Content-Type', 'application/json');
+
+    const response = await request(app).get(
+      '/api/mmr?from=2025-11-14T00:00:00Z&to=2025-11-14T23:59:59Z'
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0].timestamp).toBe('2025-11-14T00:00:00Z');
+  });
+
+  it('applies playlist and date filters together', async () => {
+    const base = {
+      timestamp: '2025-11-12T23:00:00Z',
+      playlist: 'Standard',
+      mmr: 2080,
+      gamesPlayedDiff: 1,
+      source: 'bakkes',
+    };
+
+    await request(app).post('/api/mmr-log').send(base).set('Content-Type', 'application/json');
+    await request(app)
+      .post('/api/mmr-log')
+      .send({ ...base, playlist: 'Champions', timestamp: '2025-11-13T02:00:00Z', mmr: 2140 })
+      .set('Content-Type', 'application/json');
+
+    const response = await request(app).get(
+      '/api/mmr?playlist=Champions&from=2025-11-13T00:00:00Z&to=2025-11-13T03:00:00Z'
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0].playlist).toBe('Champions');
+    expect(response.body[0].timestamp).toBe('2025-11-13T02:00:00Z');
+  });
+});
+
 describe('skills endpoints', () => {
   it('creates a skill and returns it when listing', async () => {
     const payload = {

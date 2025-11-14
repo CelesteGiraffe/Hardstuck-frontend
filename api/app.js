@@ -2,6 +2,7 @@ const express = require('express');
 const {
   saveMmrLog,
   getAllMmrLogs,
+  getMmrLogs,
   getAllSkills,
   upsertSkill,
   getAllPresets,
@@ -37,8 +38,9 @@ app.post('/api/mmr-log', (req, res) => {
   res.status(201).json({ saved: true });
 });
 
-app.get('/api/mmr', (_, res) => {
-  res.json(getAllMmrLogs());
+app.get('/api/mmr', (req, res) => {
+  const { playlist, from, to } = req.query;
+  res.json(getMmrLogs({ playlist, from, to }));
 });
 
 app.get('/api/skills', (_, res) => {

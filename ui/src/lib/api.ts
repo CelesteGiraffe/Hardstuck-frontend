@@ -73,8 +73,14 @@ export async function healthCheck(): Promise<boolean> {
   }
 }
 
-export async function getMmrRecords(): Promise<MmrRecord[]> {
-  const response = await fetch(buildUrl('/api/mmr'));
+export async function getMmrRecords(filters: { playlist?: string; from?: string; to?: string } = {}): Promise<MmrRecord[]> {
+  const params = new URLSearchParams();
+  if (filters.playlist) params.set('playlist', filters.playlist);
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+
+  const path = `/api/mmr${params.toString() ? `?${params}` : ''}`;
+  const response = await fetch(buildUrl(path));
   if (!response.ok) {
     throw new Error('Unable to load MMR records');
   }

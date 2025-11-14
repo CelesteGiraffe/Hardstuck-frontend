@@ -113,7 +113,7 @@ const insertStmt = db.prepare(
   'INSERT INTO mmr_logs (timestamp, playlist, mmr, games_played_diff, source) VALUES (?, ?, ?, ?, ?);'
 );
 const selectStmt = db.prepare(
-  'SELECT id, timestamp, playlist, mmr, games_played_diff AS gamesPlayedDiff, source FROM mmr_logs ORDER BY id ASC;'
+  'SELECT id, timestamp, playlist, mmr, games_played_diff AS gamesPlayedDiff, source FROM mmr_logs ORDER BY timestamp ASC;'
 );
 const clearStmt = db.prepare('DELETE FROM mmr_logs;');
 
@@ -123,6 +123,46 @@ function saveMmrLog({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakke
 
 function getAllMmrLogs() {
   return selectStmt.all();
+}
+
+function getMmrLogs({ playlist, from, to } = {}) {
+  if (!playlist && !from && !to) {
+    return getAllMmrLogs();
+  }
+
+  const conditions = [];
+  const params = [];
+
+  if (playlist) {
+    conditions.push('playlist = ?');
+    params.push(playlist);
+  }
+
+  if (from) {
+    conditions.push('timestamp >= ?');
+    params.push(from);
+  }
+
+  if (to) {
+    conditions.push('timestamp <= ?');
+    params.push(to);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT
+      id,
+      timestamp,
+      playlist,
+      mmr,
+      games_played_diff AS gamesPlayedDiff,
+      source
+    FROM mmr_logs
+    ${whereClause}
+    ORDER BY timestamp ASC;
+  `;
+
+  return db.prepare(query).all(...params);
 }
 
 function clearMmrLogs() {
@@ -301,6 +341,7 @@ function clearSessionTables() {
 module.exports = {
   saveMmrLog,
   getAllMmrLogs,
+  getMmrLogs,
   clearMmrLogs,
   getAllSkills,
   upsertSkill,
