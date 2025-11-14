@@ -1,5 +1,14 @@
 const express = require('express');
-const { saveMmrLog, getAllMmrLogs, getAllSkills, upsertSkill } = require('./db');
+const {
+  saveMmrLog,
+  getAllMmrLogs,
+  getAllSkills,
+  upsertSkill,
+  getAllPresets,
+  savePreset,
+  getSessions,
+  saveSession,
+} = require('./db');
 
 const app = express();
 
@@ -44,6 +53,74 @@ app.post('/api/skills', (req, res) => {
 
   const skill = upsertSkill({ id, name, category, tags, notes });
   res.status(201).json(skill);
+});
+
+app.get('/api/presets', (_, res) => {
+  res.json(getAllPresets());
+});
+
+app.post('/api/presets', (req, res) => {
+  const { id, name, blocks } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: 'name is required' });
+  }
+
+  const normalizedBlocks = Array.isArray(blocks) ? blocks : [];
+
+  for (const block of normalizedBlocks) {
+    if (
+      typeof block.orderIndex !== 'number' ||
+      typeof block.skillId !== 'number' ||
+      typeof block.type !== 'string' ||
+      typeof block.durationSeconds !== 'number'
+    ) {
+      return res.status(400).json({ error: 'blocks must include orderIndex, skillId, type, and durationSeconds' });
+    }
+  }
+
+  try {
+    const preset = savePreset({ id, name, blocks: normalizedBlocks });
+    res.status(201).json(preset);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/sessions', (req, res) => {
+  const { start, end } = req.query;
+  const sessions = getSessions({ start, end });
+  res.json(sessions);
+});
+
+app.post('/api/sessions', (req, res) => {
+  const { startedTime, finishedTime, source, presetId, notes, blocks } = req.body;
+
+  if (!startedTime || !source) {
+    return res.status(400).json({ error: 'startedTime and source are required' });
+  }
+
+  const normalizedBlocks = Array.isArray(blocks) ? blocks : [];
+
+  for (const block of normalizedBlocks) {
+    if (
+      typeof block.type !== 'string' ||
+      typeof block.plannedDuration !== 'number' ||
+      typeof block.actualDuration !== 'number' ||
+      !Array.isArray(block.skillIds)
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'blocks must include type, skillIds array, plannedDuration, and actualDuration' });
+    }
+  }
+
+  try {
+    const saved = saveSession({ startedTime, finishedTime, source, presetId, notes, blocks: normalizedBlocks });
+    res.status(201).json(saved);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 module.exports = app;

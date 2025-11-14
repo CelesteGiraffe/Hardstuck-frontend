@@ -46,6 +46,55 @@ db.prepare(
   );`
 ).run();
 
+db.prepare(
+  `CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_time TEXT NOT NULL,
+    finished_time TEXT,
+    source TEXT NOT NULL,
+    preset_id INTEGER,
+    notes TEXT
+  );`
+).run();
+
+db.prepare(
+  `CREATE TABLE IF NOT EXISTS session_blocks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    block_type TEXT NOT NULL,
+    skill_ids TEXT,
+    planned_duration INTEGER NOT NULL,
+    actual_duration INTEGER NOT NULL,
+    notes TEXT,
+    FOREIGN KEY (session_id) REFERENCES sessions (id)
+  );`
+).run();
+
+const selectPresetsStmt = db.prepare('SELECT id, name FROM presets ORDER BY id ASC;');
+const selectPresetByIdStmt = db.prepare('SELECT id, name FROM presets WHERE id = ?;');
+const insertPresetStmt = db.prepare('INSERT INTO presets (name) VALUES (?);');
+const updatePresetStmt = db.prepare('UPDATE presets SET name = ? WHERE id = ?;');
+const deletePresetBlocksStmt = db.prepare('DELETE FROM preset_blocks WHERE preset_id = ?;');
+const insertBlockStmt = db.prepare(
+  'INSERT INTO preset_blocks (preset_id, order_index, skill_id, type, duration_seconds, notes) VALUES (?, ?, ?, ?, ?, ?);'
+);
+const selectBlocksStmt = db.prepare(
+  'SELECT id, preset_id AS presetId, order_index AS orderIndex, skill_id AS skillId, type, duration_seconds AS durationSeconds, notes FROM preset_blocks WHERE preset_id = ? ORDER BY order_index ASC;'
+);
+const clearPresetBlocksStmt = db.prepare('DELETE FROM preset_blocks;');
+const clearPresetsStmt = db.prepare('DELETE FROM presets;');
+const insertSessionStmt = db.prepare(
+  'INSERT INTO sessions (started_time, finished_time, source, preset_id, notes) VALUES (?, ?, ?, ?, ?);'
+);
+const insertSessionBlockStmt = db.prepare(
+  'INSERT INTO session_blocks (session_id, block_type, skill_ids, planned_duration, actual_duration, notes) VALUES (?, ?, ?, ?, ?, ?);'
+);
+const selectSessionBlocksStmt = db.prepare(
+  'SELECT id, session_id AS sessionId, block_type AS type, skill_ids AS skillIdsJson, planned_duration AS plannedDuration, actual_duration AS actualDuration, notes FROM session_blocks WHERE session_id = ? ORDER BY id ASC;'
+);
+const clearSessionBlocksStmt = db.prepare('DELETE FROM session_blocks;');
+const clearSessionsStmt = db.prepare('DELETE FROM sessions;');
+
 const selectSkillsStmt = db.prepare(
   'SELECT id, name, category, tags, notes FROM skills ORDER BY id ASC;'
 );
@@ -102,6 +151,116 @@ function clearSkills() {
   clearSkillsStmt.run();
 }
 
+function buildPresetResponse(preset) {
+  const blocks = selectBlocksStmt.all(preset.id);
+  return { ...preset, blocks };
+}
+
+function getAllPresets() {
+  return selectPresetsStmt.all().map(buildPresetResponse);
+}
+
+const savePresetTransaction = db.transaction(({ id, name, blocks }) => {
+  const normalizedBlocks = Array.isArray(blocks) ? blocks : [];
+  let presetId = id;
+
+  if (presetId) {
+    updatePresetStmt.run(name, presetId);
+  } else {
+    const info = insertPresetStmt.run(name);
+    presetId = info.lastInsertRowid;
+  }
+
+  deletePresetBlocksStmt.run(presetId);
+
+  for (const block of normalizedBlocks) {
+    insertBlockStmt.run(
+      presetId,
+      block.orderIndex,
+      block.skillId,
+      block.type,
+      block.durationSeconds,
+      block.notes || null
+    );
+  }
+
+  return buildPresetResponse({ id: presetId, name });
+});
+
+function savePreset(preset) {
+  if (!preset.name) {
+    throw new Error('name is required');
+  }
+
+  return savePresetTransaction(preset);
+}
+
+function clearPresetTables() {
+  clearPresetBlocksStmt.run();
+  clearPresetsStmt.run();
+}
+
+function buildSessionResponse(session) {
+  const blocks = selectSessionBlocksStmt.all(session.id).map(({ skillIdsJson, ...rest }) => ({
+    ...rest,
+    skillIds: skillIdsJson ? JSON.parse(skillIdsJson) : [],
+  }));
+
+  return { ...session, blocks };
+}
+
+function getSessions({ start, end } = {}) {
+  const conditions = [];
+  const params = [];
+
+  if (start) {
+    conditions.push('started_time >= ?');
+    params.push(start);
+  }
+
+  if (end) {
+    conditions.push('started_time <= ?');
+    params.push(end);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `SELECT id, started_time AS startedTime, finished_time AS finishedTime, source, preset_id AS presetId, notes FROM sessions ${whereClause} ORDER BY started_time ASC;`;
+  const resp = db.prepare(query).all(...params);
+  return resp.map(buildSessionResponse);
+}
+
+const saveSessionTransaction = db.transaction(({ startedTime, finishedTime, source, presetId = null, notes = null, blocks = [] }) => {
+  const info = insertSessionStmt.run(startedTime, finishedTime || null, source, presetId, notes);
+  const sessionId = info.lastInsertRowid;
+
+  for (const block of blocks) {
+    const skillIdsJson = Array.isArray(block.skillIds) ? JSON.stringify(block.skillIds) : null;
+    insertSessionBlockStmt.run(
+      sessionId,
+      block.type,
+      skillIdsJson,
+      block.plannedDuration,
+      block.actualDuration,
+      block.notes || null
+    );
+  }
+
+  return buildSessionResponse({ id: sessionId, startedTime, finishedTime, source, presetId, notes });
+});
+
+function saveSession(session) {
+  if (!session.startedTime || !session.source) {
+    throw new Error('startedTime and source are required');
+  }
+
+  return saveSessionTransaction(session);
+}
+
+function clearSessionTables() {
+  clearSessionBlocksStmt.run();
+  clearSessionsStmt.run();
+}
+
 module.exports = {
   saveMmrLog,
   getAllMmrLogs,
@@ -109,4 +268,10 @@ module.exports = {
   getAllSkills,
   upsertSkill,
   clearSkills,
+  getAllPresets,
+  savePreset,
+  clearPresetTables,
+  getSessions,
+  saveSession,
+  clearSessionTables,
 };

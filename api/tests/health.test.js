@@ -6,7 +6,9 @@ const app = require('../app');
 
 beforeEach(() => {
   db.clearMmrLogs();
+  db.clearPresetTables();
   db.clearSkills();
+  db.clearSessionTables();
 });
 
 describe('GET /api/health', () => {
@@ -135,5 +137,149 @@ describe('skills endpoints', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({ error: 'name is required' });
+  });
+});
+
+describe('presets endpoints', () => {
+  it('creates a preset with blocks and returns it when listing', async () => {
+    const skillPayload = { name: 'Aerial' };
+    const skill = await request(app)
+      .post('/api/skills')
+      .send(skillPayload)
+      .set('Content-Type', 'application/json');
+
+    const payload = {
+      name: 'Warmup',
+      blocks: [
+        {
+          orderIndex: 1,
+          skillId: skill.body.id,
+          type: 'focus',
+          durationSeconds: 300,
+          notes: 'air roll practice',
+        },
+      ],
+    };
+
+    const post = await request(app)
+      .post('/api/presets')
+      .send(payload)
+      .set('Content-Type', 'application/json');
+
+    expect(post.statusCode).toBe(201);
+    expect(post.body).toMatchObject({ name: payload.name });
+    expect(post.body.blocks).toHaveLength(1);
+
+    const get = await request(app).get('/api/presets');
+    expect(get.statusCode).toBe(200);
+    expect(get.body).toEqual([
+      expect.objectContaining({
+        id: expect.any(Number),
+        name: payload.name,
+        blocks: [
+          expect.objectContaining({
+            orderIndex: 1,
+            skillId: skill.body.id,
+            type: payload.blocks[0].type,
+            durationSeconds: payload.blocks[0].durationSeconds,
+            notes: payload.blocks[0].notes,
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it('rejects presets without a name', async () => {
+    const response = await request(app)
+      .post('/api/presets')
+      .send({ blocks: [] })
+      .set('Content-Type', 'application/json');
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('updates blocks when re-posted with an id', async () => {
+    const skillPayload = { name: 'Rotation' };
+    const skill = await request(app)
+      .post('/api/skills')
+      .send(skillPayload)
+      .set('Content-Type', 'application/json');
+
+    const basePayload = {
+      name: 'Session',
+      blocks: [
+        { orderIndex: 1, skillId: skill.body.id, type: 'review', durationSeconds: 120 },
+      ],
+    };
+
+    const firstPost = await request(app)
+      .post('/api/presets')
+      .send(basePayload)
+      .set('Content-Type', 'application/json');
+
+    const updated = await request(app)
+      .post('/api/presets')
+      .send({ id: firstPost.body.id, name: 'Session', blocks: [] })
+      .set('Content-Type', 'application/json');
+
+    expect(updated.statusCode).toBe(201);
+    expect(updated.body.blocks).toHaveLength(0);
+  });
+});
+
+describe('sessions endpoints', () => {
+  it('creates a session with blocks and returns it on GET', async () => {
+    const payload = {
+      startedTime: '2025-11-13T10:00:00Z',
+      finishedTime: '2025-11-13T11:00:00Z',
+      source: 'quick',
+      notes: 'test run',
+      blocks: [
+        {
+          type: 'warmup',
+          skillIds: [],
+          plannedDuration: 120,
+          actualDuration: 110,
+          notes: 'stretch',
+        },
+      ],
+    };
+
+    const post = await request(app)
+      .post('/api/sessions')
+      .send(payload)
+      .set('Content-Type', 'application/json');
+
+    expect(post.statusCode).toBe(201);
+    expect(post.body.blocks).toHaveLength(1);
+
+    const get = await request(app).get('/api/sessions');
+    expect(get.statusCode).toBe(200);
+    expect(get.body[0]).toMatchObject({
+      startedTime: payload.startedTime,
+      source: payload.source,
+    });
+    expect(get.body[0].blocks[0].type).toBe(payload.blocks[0].type);
+  });
+
+  it('filters sessions by optional start query', async () => {
+    await request(app)
+      .post('/api/sessions')
+      .send({ startedTime: '2025-11-13T09:00:00Z', source: 'quick', blocks: [], finishedTime: null })
+      .set('Content-Type', 'application/json');
+    await request(app)
+      .post('/api/sessions')
+      .send({ startedTime: '2025-11-14T09:00:00Z', source: 'quick', blocks: [], finishedTime: null })
+      .set('Content-Type', 'application/json');
+
+    const get = await request(app).get('/api/sessions?start=2025-11-14T00:00:00Z');
+    expect(get.body).toHaveLength(1);
+  });
+
+  it('rejects sessions missing required fields', async () => {
+    const response = await request(app).post('/api/sessions').send({}).set('Content-Type', 'application/json');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'startedTime and source are required' });
   });
 });
