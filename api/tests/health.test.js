@@ -225,6 +225,28 @@ describe('presets endpoints', () => {
     expect(updated.statusCode).toBe(201);
     expect(updated.body.blocks).toHaveLength(0);
   });
+
+  it('rejects blocks missing required keys', async () => {
+    const skillPayload = { name: 'Rotation' };
+    const skill = await request(app)
+      .post('/api/skills')
+      .send(skillPayload)
+      .set('Content-Type', 'application/json');
+
+    const payload = {
+      name: 'Faulty',
+      blocks: [
+        { orderIndex: 1, skillId: skill.body.id, type: 'focus' /* missing duration */ },
+      ],
+    };
+
+    const response = await request(app)
+      .post('/api/presets')
+      .send(payload)
+      .set('Content-Type', 'application/json');
+
+    expect(response.statusCode).toBe(400);
+  });
 });
 
 describe('sessions endpoints', () => {
@@ -273,6 +295,20 @@ describe('sessions endpoints', () => {
       .set('Content-Type', 'application/json');
 
     const get = await request(app).get('/api/sessions?start=2025-11-14T00:00:00Z');
+    expect(get.body).toHaveLength(1);
+  });
+
+  it('filters sessions by end query', async () => {
+    await request(app)
+      .post('/api/sessions')
+      .send({ startedTime: '2025-11-15T09:00:00Z', source: 'quick', blocks: [], finishedTime: null })
+      .set('Content-Type', 'application/json');
+    await request(app)
+      .post('/api/sessions')
+      .send({ startedTime: '2025-11-16T09:00:00Z', source: 'quick', blocks: [], finishedTime: null })
+      .set('Content-Type', 'application/json');
+
+    const get = await request(app).get('/api/sessions?end=2025-11-15T12:00:00Z');
     expect(get.body).toHaveLength(1);
   });
 
