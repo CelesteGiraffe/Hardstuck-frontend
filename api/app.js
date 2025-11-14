@@ -1,5 +1,5 @@
 const express = require('express');
-const { saveMmrLog, getAllMmrLogs } = require('./db');
+const { saveMmrLog, getAllMmrLogs, getAllSkills, upsertSkill } = require('./db');
 
 const app = express();
 
@@ -29,6 +29,21 @@ app.post('/api/mmr-log', (req, res) => {
 
 app.get('/api/mmr', (_, res) => {
   res.json(getAllMmrLogs());
+});
+
+app.get('/api/skills', (_, res) => {
+  res.json(getAllSkills());
+});
+
+app.post('/api/skills', (req, res) => {
+  const { id, name, category, tags, notes } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: 'name is required' });
+  }
+
+  const skill = upsertSkill({ id, name, category, tags, notes });
+  res.status(201).json(skill);
 });
 
 module.exports = app;

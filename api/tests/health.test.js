@@ -6,6 +6,7 @@ const app = require('../app');
 
 beforeEach(() => {
   db.clearMmrLogs();
+  db.clearSkills();
 });
 
 describe('GET /api/health', () => {
@@ -44,6 +45,38 @@ describe('MMR log endpoints', () => {
         mmr: payload.mmr,
         gamesPlayedDiff: payload.gamesPlayedDiff,
         source: payload.source,
+      }),
+    ]);
+  });
+});
+
+describe('skills endpoints', () => {
+  it('creates a skill and returns it when listing', async () => {
+    const payload = {
+      name: 'Shooting',
+      category: 'Offense',
+      tags: 'air,demo',
+      notes: 'focus on placement',
+    };
+
+    const post = await request(app)
+      .post('/api/skills')
+      .send(payload)
+      .set('Content-Type', 'application/json');
+
+    expect(post.statusCode).toBe(201);
+    expect(post.body).toMatchObject(payload);
+    expect(post.body.id).toBeDefined();
+
+    const get = await request(app).get('/api/skills');
+    expect(get.statusCode).toBe(200);
+    expect(get.body).toEqual([
+      expect.objectContaining({
+        id: expect.any(Number),
+        name: payload.name,
+        category: payload.category,
+        tags: payload.tags,
+        notes: payload.notes,
       }),
     ]);
   });

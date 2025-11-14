@@ -46,6 +46,20 @@ db.prepare(
   );`
 ).run();
 
+const selectSkillsStmt = db.prepare(
+  'SELECT id, name, category, tags, notes FROM skills ORDER BY id ASC;'
+);
+const selectSkillByIdStmt = db.prepare(
+  'SELECT id, name, category, tags, notes FROM skills WHERE id = ?;'
+);
+const insertSkillStmt = db.prepare(
+  'INSERT INTO skills (name, category, tags, notes) VALUES (?, ?, ?, ?);'
+);
+const updateSkillStmt = db.prepare(
+  'UPDATE skills SET name = ?, category = ?, tags = ?, notes = ? WHERE id = ?;'
+);
+const clearSkillsStmt = db.prepare('DELETE FROM skills;');
+
 const insertStmt = db.prepare(
   'INSERT INTO mmr_logs (timestamp, playlist, mmr, games_played_diff, source) VALUES (?, ?, ?, ?, ?);'
 );
@@ -66,4 +80,33 @@ function clearMmrLogs() {
   clearStmt.run();
 }
 
-module.exports = { saveMmrLog, getAllMmrLogs, clearMmrLogs };
+function getAllSkills() {
+  return selectSkillsStmt.all();
+}
+
+function upsertSkill({ id, name, category = null, tags = null, notes = null }) {
+  if (!name) {
+    throw new Error('name is required');
+  }
+
+  if (id) {
+    updateSkillStmt.run(name, category, tags, notes, id);
+    return selectSkillByIdStmt.get(id);
+  }
+
+  const info = insertSkillStmt.run(name, category, tags, notes);
+  return selectSkillByIdStmt.get(info.lastInsertRowid);
+}
+
+function clearSkills() {
+  clearSkillsStmt.run();
+}
+
+module.exports = {
+  saveMmrLog,
+  getAllMmrLogs,
+  clearMmrLogs,
+  getAllSkills,
+  upsertSkill,
+  clearSkills,
+};
