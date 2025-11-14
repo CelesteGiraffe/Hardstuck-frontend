@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "start": "concurrently \"npm run start --prefix api\" \"npm run dev --prefix ui -- --host\"",
     "test": "npm run test --prefix api && npm run check --prefix ui"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
   }
 }
