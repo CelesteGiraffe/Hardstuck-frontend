@@ -22,5 +22,12 @@ pnpm-debug.log*
 /ui/dist/
 /ui/public/build/
 
+# UI tooling caches & env overrides
+/ui/.env*
+!/ui/.env.example
+/ui/.vite/
+/ui/.vitest/
+/ui/*.timestamp-*.mjs
+
 # macOS files
 .DS_Store

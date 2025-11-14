@@ -7,6 +7,7 @@ const {
   upsertSkill,
   getAllPresets,
   savePreset,
+  deletePreset,
   getSessions,
   saveSession,
   getSkillDurationSummary,
@@ -102,6 +103,21 @@ app.post('/api/presets', (req, res) => {
   try {
     const preset = savePreset({ id, name, blocks: normalizedBlocks });
     res.status(201).json(preset);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/presets/:id', (req, res) => {
+  const presetId = Number(req.params.id);
+
+  if (!Number.isInteger(presetId) || presetId <= 0) {
+    return res.status(400).json({ error: 'invalid preset id' });
+  }
+
+  try {
+    deletePreset(presetId);
+    res.status(204).end();
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

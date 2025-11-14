@@ -83,6 +83,7 @@ const selectBlocksStmt = db.prepare(
 );
 const clearPresetBlocksStmt = db.prepare('DELETE FROM preset_blocks;');
 const clearPresetsStmt = db.prepare('DELETE FROM presets;');
+const deletePresetStmt = db.prepare('DELETE FROM presets WHERE id = ?;');
 const insertSessionStmt = db.prepare(
   'INSERT INTO sessions (started_time, finished_time, source, preset_id, notes) VALUES (?, ?, ?, ?, ?);'
 );
@@ -235,6 +236,19 @@ function savePreset(preset) {
   return savePresetTransaction(preset);
 }
 
+function deletePreset(id) {
+  if (!id) {
+    throw new Error('preset id is required');
+  }
+
+  const remove = db.transaction((presetId) => {
+    deletePresetBlocksStmt.run(presetId);
+    deletePresetStmt.run(presetId);
+  });
+
+  remove(id);
+}
+
 function clearPresetTables() {
   clearPresetBlocksStmt.run();
   clearPresetsStmt.run();
@@ -348,6 +362,7 @@ module.exports = {
   clearSkills,
   getAllPresets,
   savePreset,
+  deletePreset,
   clearPresetTables,
   getSessions,
   saveSession,

@@ -65,6 +65,21 @@ export type Preset = {
   blocks: PresetBlock[];
 };
 
+export type PresetBlockPayload = {
+  id?: number;
+  orderIndex: number;
+  skillId: number;
+  type: string;
+  durationSeconds: number;
+  notes?: string | null;
+};
+
+export type PresetPayload = {
+  id?: number;
+  name: string;
+  blocks: PresetBlockPayload[];
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 
 function buildUrl(path: string) {
@@ -126,6 +141,32 @@ export async function getPresets(): Promise<Preset[]> {
   }
 
   return (await response.json()) as Preset[];
+}
+
+export async function savePreset(payload: PresetPayload): Promise<Preset> {
+  const response = await fetch(buildUrl('/api/presets'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to save preset');
+  }
+
+  return (await response.json()) as Preset;
+}
+
+export async function deletePreset(id: number): Promise<void> {
+  const response = await fetch(buildUrl(`/api/presets/${id}`), {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to delete preset');
+  }
 }
 
 export type SessionBlockPayload = {

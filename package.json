@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "start": "concurrently \"npm run start --prefix api\" \"npm run dev --prefix ui -- --host\"",
-    "test": "npm run test --prefix api && npm run check --prefix ui"
+    "test": "npm run test --prefix api && npm run test --prefix ui && npm run check --prefix ui"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"
