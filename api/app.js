@@ -1,7 +1,7 @@
 const express = require('express');
+const { saveMmrLog, getAllMmrLogs } = require('./db');
 
 const app = express();
-const mmrLogs = [];
 
 app.use(express.json());
 
@@ -10,18 +10,25 @@ app.get('/api/health', (_, res) => {
 });
 
 app.post('/api/mmr-log', (req, res) => {
-  const { timestamp, playlist, mmr, gamesPlayedDiff } = req.body;
-  const record = { timestamp, playlist, mmr, gamesPlayedDiff };
-  mmrLogs.push(record);
+  const { timestamp, playlist, mmr, gamesPlayedDiff, source } = req.body;
+
+  if (!timestamp || !playlist || typeof mmr !== 'number' || typeof gamesPlayedDiff !== 'number') {
+    return res.status(400).json({ error: 'timestamp, playlist, mmr, and gamesPlayedDiff are required' });
+  }
+
+  saveMmrLog({
+    timestamp,
+    playlist,
+    mmr,
+    gamesPlayedDiff,
+    source,
+  });
+
   res.status(201).json({ saved: true });
 });
 
 app.get('/api/mmr', (_, res) => {
-  res.json(mmrLogs);
+  res.json(getAllMmrLogs());
 });
-
-app.resetMmrLogs = () => {
-  mmrLogs.length = 0;
-};
 
 module.exports = app;

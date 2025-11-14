@@ -1,10 +1,11 @@
+process.env.DATABASE_PATH = ':memory:';
+
 const request = require('supertest');
+const db = require('../db');
 const app = require('../app');
 
 beforeEach(() => {
-  if (typeof app.resetMmrLogs === 'function') {
-    app.resetMmrLogs();
-  }
+  db.clearMmrLogs();
 });
 
 describe('GET /api/health', () => {
@@ -22,6 +23,7 @@ describe('MMR log endpoints', () => {
       playlist: 'Standard',
       mmr: 2100,
       gamesPlayedDiff: 3,
+      source: 'bakkes',
     };
 
     const post = await request(app)
@@ -34,6 +36,15 @@ describe('MMR log endpoints', () => {
 
     const get = await request(app).get('/api/mmr');
     expect(get.statusCode).toBe(200);
-    expect(get.body).toEqual([payload]);
+    expect(get.body).toEqual([
+      expect.objectContaining({
+        id: expect.any(Number),
+        timestamp: payload.timestamp,
+        playlist: payload.playlist,
+        mmr: payload.mmr,
+        gamesPlayedDiff: payload.gamesPlayedDiff,
+        source: payload.source,
+      }),
+    ]);
   });
 });
