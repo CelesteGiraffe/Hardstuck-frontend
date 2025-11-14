@@ -35,6 +35,12 @@ export type Session = {
   blocks: SessionBlock[];
 };
 
+export type SkillSummary = {
+  skillId: number;
+  name: string;
+  minutes: number;
+};
+
 export type PresetBlock = {
   id: number;
   presetId: number;
@@ -132,6 +138,20 @@ export async function getSessions(): Promise<Session[]> {
   }
 
   return (await response.json()) as Session[];
+}
+
+export async function getSkillSummary({ from, to }: { from?: string; to?: string } = {}): Promise<SkillSummary[]> {
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const path = `/api/summary/skills${params.toString() ? `?${params}` : ''}`;
+  const response = await fetch(buildUrl(path));
+
+  if (!response.ok) {
+    throw new Error('Unable to load skill summary');
+  }
+
+  return (await response.json()) as SkillSummary[];
 }
 
 export async function createSkill(payload: { name: string; category?: string; notes?: string }): Promise<Skill> {

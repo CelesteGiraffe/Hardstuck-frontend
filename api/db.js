@@ -229,6 +229,43 @@ function getSessions({ start, end } = {}) {
   return resp.map(buildSessionResponse);
 }
 
+function getSkillDurationSummary({ from, to } = {}) {
+  const conditions = ['sb.skill_ids IS NOT NULL', 'json_valid(sb.skill_ids)'];
+  const params = [];
+
+  if (from) {
+    conditions.push('s.started_time >= ?');
+    params.push(from);
+  }
+
+  if (to) {
+    conditions.push('s.started_time <= ?');
+    params.push(to);
+  }
+
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
+  const query = `
+    SELECT
+      k.id AS skillId,
+      k.name,
+      SUM(sb.actual_duration) AS totalSeconds
+    FROM session_blocks sb
+    JOIN sessions s ON s.id = sb.session_id
+    JOIN json_each(sb.skill_ids) AS block_skill
+    JOIN skills k ON k.id = block_skill.value
+    ${whereClause}
+    GROUP BY k.id, k.name
+    ORDER BY totalSeconds DESC;
+  `;
+
+  const rows = db.prepare(query).all(...params);
+  return rows.map(({ skillId, name, totalSeconds }) => ({
+    skillId,
+    name,
+    minutes: Math.round((totalSeconds || 0) / 60),
+  }));
+}
+
 const saveSessionTransaction = db.transaction(({ startedTime, finishedTime, source, presetId = null, notes = null, blocks = [] }) => {
   const info = insertSessionStmt.run(startedTime, finishedTime || null, source, presetId, notes);
   const sessionId = info.lastInsertRowid;
@@ -274,4 +311,5 @@ module.exports = {
   getSessions,
   saveSession,
   clearSessionTables,
+  getSkillDurationSummary,
 };

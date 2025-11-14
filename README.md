@@ -21,6 +21,7 @@ This project consists of three main parts:
   - timer presets,
   - training sessions,
   - MMR logs.
+  - aggregated skill summaries for charting (e.g., minutes per skill over a date range).
 - Designed to be small and easy to understand.
 
 ### 2. Front-End UI (Svelte + TypeScript)

@@ -8,6 +8,7 @@ const {
   savePreset,
   getSessions,
   saveSession,
+  getSkillDurationSummary,
 } = require('./db');
 
 const app = express();
@@ -91,6 +92,12 @@ app.get('/api/sessions', (req, res) => {
   const { start, end } = req.query;
   const sessions = getSessions({ start, end });
   res.json(sessions);
+});
+
+app.get('/api/summary/skills', (req, res) => {
+  const { from, to } = req.query;
+  const summary = getSkillDurationSummary({ from, to });
+  res.json(summary);
 });
 
 app.post('/api/sessions', (req, res) => {

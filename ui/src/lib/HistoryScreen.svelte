@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getSessions, getSkills, getPresets } from './api';
-  import type { Session, SessionBlock } from './api';
+  import { getSessions, getSkills, getPresets, getSkillSummary } from './api';
+  import type { Session, SessionBlock, SkillSummary } from './api';
 
   let sessions: Session[] = [];
   let selectedSession: Session | null = null;
@@ -9,8 +9,16 @@
   let error: string | null = null;
   let skillMap: Record<number, string> = {};
   let presetMap: Record<number, string> = {};
+  let summary: SkillSummary[] = [];
+  let summaryLoading = true;
+  let summaryError: string | null = null;
 
   onMount(async () => {
+    loadSessions();
+    loadSummary();
+  });
+
+  async function loadSessions() {
     loading = true;
     error = null;
 
@@ -24,7 +32,22 @@
     } finally {
       loading = false;
     }
-  });
+  }
+
+  async function loadSummary() {
+    summaryLoading = true;
+    summaryError = null;
+    const to = new Date();
+    const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    try {
+      summary = await getSkillSummary({ from: from.toISOString(), to: to.toISOString() });
+    } catch (err) {
+      summaryError = err instanceof Error ? err.message : 'Unable to load summary';
+    } finally {
+      summaryLoading = false;
+    }
+  }
 
   function formatDate(value: string) {
     return new Date(value).toLocaleString();
@@ -34,6 +57,8 @@
     const totalSeconds = session.blocks.reduce((sum, block) => sum + Math.max(0, block.actualDuration), 0);
     return Math.round(totalSeconds / 60);
   }
+
+  $: chartMaxMinutes = summary.length ? Math.max(...summary.map((item) => item.minutes)) : 0;
 
   function toggleSession(session: Session) {
     selectedSession = selectedSession?.id === session.id ? null : session;
@@ -55,6 +80,32 @@
 <section class="screen-content">
   <h1>History</h1>
   <p>Review your completed training sessions.</p>
+
+  <div class="history-summary">
+    <h2>Training per skill (last 7 days)</h2>
+
+    {#if summaryLoading}
+      <p>Loading summary…</p>
+    {:else if summaryError}
+      <p class="badge offline">{summaryError}</p>
+    {:else if summary.length === 0}
+      <p>No activity recorded yet.</p>
+    {:else}
+      <div class="summary-chart">
+        {#each summary as item}
+          <div class="chart-bar">
+            <div
+              class="chart-bar-value"
+              style={`height: ${chartMaxMinutes ? (item.minutes / chartMaxMinutes) * 160 : 0}px`}
+            >
+              <span>{item.minutes}m</span>
+            </div>
+            <div class="chart-bar-label">{item.name}</div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
 
   {#if loading}
     <p>Loading sessions…</p>
@@ -116,3 +167,52 @@
     {/if}
   {/if}
 </section>
+
+<style>
+  .history-summary {
+    background: var(--card-background, #fff);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 10px 40px -20px rgba(0, 0, 0, 0.25);
+  }
+
+  .summary-chart {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-end;
+    min-height: 180px;
+  }
+
+  .chart-bar {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .chart-bar-value {
+    width: 100%;
+    background: linear-gradient(180deg, #8dd9ff, #4a7cff);
+    border-radius: 999px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .chart-bar-value span {
+    padding-bottom: 0.25rem;
+  }
+
+  .chart-bar-label {
+    font-size: 0.75rem;
+    text-align: center;
+    color: var(--muted-text, #7a7a7a);
+    max-width: 60px;
+    word-break: break-word;
+  }
+</style>

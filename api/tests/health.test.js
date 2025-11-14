@@ -356,3 +356,43 @@ describe('sessions endpoints', () => {
     expect(response.body).toEqual({ error: 'startedTime and source are required' });
   });
 });
+
+describe('summary endpoints', () => {
+  it('reports minutes per skill', async () => {
+    const skillPayload = { name: 'Aerial control' };
+    const skill = await request(app)
+      .post('/api/skills')
+      .send(skillPayload)
+      .set('Content-Type', 'application/json');
+
+    const sessionPayload = {
+      startedTime: '2025-11-13T12:00:00Z',
+      finishedTime: '2025-11-13T12:04:00Z',
+      source: 'preset',
+      blocks: [
+        {
+          type: 'focus',
+          skillIds: [skill.body.id],
+          plannedDuration: 120,
+          actualDuration: 180,
+          notes: 'focus on ceiling shots',
+        },
+      ],
+    };
+
+    await request(app)
+      .post('/api/sessions')
+      .send(sessionPayload)
+      .set('Content-Type', 'application/json');
+
+    const response = await request(app).get('/api/summary/skills');
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual([
+      expect.objectContaining({
+        skillId: skill.body.id,
+        name: skill.body.name,
+        minutes: 3,
+      }),
+    ]);
+  });
+});
