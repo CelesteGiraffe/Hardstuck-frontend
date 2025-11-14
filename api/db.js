@@ -15,6 +15,37 @@ db.prepare(
   );`
 ).run();
 
+db.prepare(
+  `CREATE TABLE IF NOT EXISTS skills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    category TEXT,
+    tags TEXT,
+    notes TEXT
+  );`
+).run();
+
+db.prepare(
+  `CREATE TABLE IF NOT EXISTS presets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL
+  );`
+).run();
+
+db.prepare(
+  `CREATE TABLE IF NOT EXISTS preset_blocks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    preset_id INTEGER NOT NULL,
+    order_index INTEGER NOT NULL,
+    skill_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    duration_seconds INTEGER NOT NULL,
+    notes TEXT,
+    FOREIGN KEY (preset_id) REFERENCES presets (id),
+    FOREIGN KEY (skill_id) REFERENCES skills (id)
+  );`
+).run();
+
 const insertStmt = db.prepare(
   'INSERT INTO mmr_logs (timestamp, playlist, mmr, games_played_diff, source) VALUES (?, ?, ?, ?, ?);'
 );
