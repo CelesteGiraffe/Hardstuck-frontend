@@ -22,9 +22,26 @@ app.get('/api/health', (_, res) => {
 
 app.post('/api/mmr-log', (req, res) => {
   const { timestamp, playlist, mmr, gamesPlayedDiff, source } = req.body;
+  const errors = [];
 
-  if (!timestamp || !playlist || typeof mmr !== 'number' || typeof gamesPlayedDiff !== 'number') {
-    return res.status(400).json({ error: 'timestamp, playlist, mmr, and gamesPlayedDiff are required' });
+  if (!timestamp) {
+    errors.push('timestamp is required');
+  }
+
+  if (typeof playlist !== 'string' || playlist.trim().length === 0) {
+    errors.push('playlist must be a non-empty string');
+  }
+
+  if (typeof mmr !== 'number' || Number.isNaN(mmr)) {
+    errors.push('mmr must be a number');
+  }
+
+  if (typeof gamesPlayedDiff !== 'number' || Number.isNaN(gamesPlayedDiff)) {
+    errors.push('gamesPlayedDiff must be a number');
+  }
+
+  if (errors.length) {
+    return res.status(400).json({ error: errors.join('. ') });
   }
 
   saveMmrLog({

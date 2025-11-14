@@ -65,6 +65,41 @@ Avoid unnecessary frameworks, generated file forests, or cloud dependencies. Eve
 - Manual MMR logging if needed.
 - SQLite storage for all match results.
 
+### Plugin API contract
+The BakkesMod plugin calls the local API to report ranked matches. The endpoint expects a single POST request per match to `/api/mmr-log`.
+
+- **URL:** `http://localhost:4000/api/mmr-log` (adjust the port via `PORT` if you host the API elsewhere).
+- **Headers:** `Content-Type: application/json`
+- **Required payload fields**
+  - `timestamp`: ISO 8601 string (e.g., `2025-11-13T00:00:00Z`).
+  - `playlist`: non-empty string naming the ranked playlist (e.g., `Standard`, `Doubles`).
+  - `mmr`: numeric MMR value after the match.
+  - `gamesPlayedDiff`: numeric change in games played since the previous log (typically `1`).
+  - `source`: optional string that defaults to `bakkes`.
+- The endpoint validates each field and returns an HTTP 400 with a compact error message when something is missing or the wrong type. That keeps the plugin fast and predictable.
+
+#### Example payloads
+```
+{
+  "timestamp": "2025-11-13T03:14:00Z",
+  "playlist": "Standard",
+  "mmr": 2125,
+  "gamesPlayedDiff": 1,
+  "source": "bakkes"
+}
+
+{
+  "timestamp": "2025-11-13T03:45:00Z",
+  "playlist": "Doubles",
+  "mmr": 2058,
+  "gamesPlayedDiff": 1
+}
+```
+
+Assumptions
+- The API server is running locally on port 4000 (or use the `PORT` environment variable).
+- The plugin can retry failed requests if it receives a 400–level response, since the error message explains what’s wrong.
+
 ### Analytics
 - Time spent per skill (bar charts).
 - Overall training volume over time.

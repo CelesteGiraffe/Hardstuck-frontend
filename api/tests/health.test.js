@@ -54,11 +54,14 @@ describe('MMR log endpoints', () => {
   it('rejects incomplete payloads', async () => {
     const response = await request(app)
       .post('/api/mmr-log')
-      .send({ playlist: 'Standard', mmr: 100, gamesPlayedDiff: 1 })
+      .send({})
       .set('Content-Type', 'application/json');
 
     expect(response.statusCode).toBe(400);
-    expect(response.body).toEqual({ error: 'timestamp, playlist, mmr, and gamesPlayedDiff are required' });
+    expect(response.body).toEqual({
+      error:
+        'timestamp is required. playlist must be a non-empty string. mmr must be a number. gamesPlayedDiff must be a number',
+    });
   });
 
   it('returns all stored records', async () => {
@@ -79,6 +82,36 @@ describe('MMR log endpoints', () => {
     const response = await request(app).get('/api/mmr');
     expect(response.statusCode).toBe(200);
     expect(response.body).toHaveLength(2);
+  });
+
+  it('rejects invalid playlist data', async () => {
+    const response = await request(app)
+      .post('/api/mmr-log')
+      .send({ timestamp: '2025-11-13T00:00:00Z', playlist: 123, mmr: 2100, gamesPlayedDiff: 1 })
+      .set('Content-Type', 'application/json');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'playlist must be a non-empty string' });
+  });
+
+  it('rejects non-numeric mmr', async () => {
+    const response = await request(app)
+      .post('/api/mmr-log')
+      .send({ timestamp: '2025-11-13T00:00:00Z', playlist: 'Standard', mmr: 'bad', gamesPlayedDiff: 1 })
+      .set('Content-Type', 'application/json');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'mmr must be a number' });
+  });
+
+  it('rejects non-numeric gamesPlayedDiff', async () => {
+    const response = await request(app)
+      .post('/api/mmr-log')
+      .send({ timestamp: '2025-11-13T00:00:00Z', playlist: 'Standard', mmr: 2100, gamesPlayedDiff: 'bad' })
+      .set('Content-Type', 'application/json');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'gamesPlayedDiff must be a number' });
   });
 });
 
