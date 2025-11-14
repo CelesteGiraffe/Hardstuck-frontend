@@ -133,6 +133,24 @@ Each part is kept small and isolated so the project is easy to maintain.
 
 3. (Later) Enable the BakkesMod plugin to start sending MMR logs automatically.
 
+## How to use
+
+1. **Launch the stack**
+  - Run the API (`cd api && npm start`) and keep it listening on `http://localhost:4000`.
+  - Start the UI (`cd ui && npm run dev -- --host`) and open the Vite URL in your browser.
+
+2. **Log training**
+  - Create skills and presets in the UI.
+  - Begin a preset from the Home screen or use the quick timer to log a focused block tied to a skill.
+  - Add notes and adjust block durations if needed so the session reflects your actual work.
+
+3. **Track performance**
+  - Let the BakkesMod plugin POST to `/api/mmr-log` after matches, or use the manual form on the History screen.
+  - Visit the History screen to view skill summaries and playlist-specific MMR trends.
+
+4. **Verify everything**
+  - Run `npm test` from the repo root to execute the API Jest suite and the UI `svelte-check`/TypeScript checks at once.
+
 ## Testing
 
 Run everything with a single command from the project root:
