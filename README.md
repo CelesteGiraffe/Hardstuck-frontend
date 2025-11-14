@@ -141,6 +141,8 @@ npm start
 
 This uses `concurrently` to launch the API server and the Vite dev server together so you can test the entire stack while developing.
 
+The UI dev server already proxies `/api` to `http://localhost:4000`, so API calls work without extra configuration.
+
 ## How to use
 
 1. **Launch the stack**
