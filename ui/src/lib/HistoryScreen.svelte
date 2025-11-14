@@ -437,11 +437,12 @@
 
 <style>
   .history-summary {
-    background: var(--card-background, #fff);
-    border-radius: 12px;
-    padding: 1rem;
+    background: var(--card-background, rgba(15, 23, 42, 0.95));
+    border-radius: 16px;
+    padding: 1.25rem;
     margin-bottom: 1.5rem;
-    box-shadow: 0 10px 40px -20px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--history-card-shadow);
+    color: #fff;
   }
 
   .summary-chart {
@@ -478,14 +479,14 @@
   .chart-bar-label {
     font-size: 0.75rem;
     text-align: center;
-    color: var(--muted-text, #7a7a7a);
+    color: rgba(255, 255, 255, 0.65);
     max-width: 60px;
     word-break: break-word;
   }
 
   .manual-mmr-form {
     margin-bottom: 1.25rem;
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
     padding-bottom: 1rem;
   }
 
@@ -501,16 +502,17 @@
     flex-direction: column;
     gap: 0.25rem;
     font-size: 0.85rem;
-    color: var(--muted-text, #7a7a7a);
+    color: rgba(255, 255, 255, 0.8);
   }
 
   .manual-mmr-fields input,
   .manual-mmr-fields select {
     padding: 0.45rem 0.75rem;
     border-radius: 6px;
-    border: 1px solid var(--border-color, #dcdcdc);
-    background: var(--input-background, #fff);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
+    background: var(--input-background, rgba(15, 23, 42, 0.9));
     font-size: 0.95rem;
+    color: #fff;
   }
 
   .manual-mmr-form .btn-primary {
@@ -541,11 +543,12 @@
   }
 
   .history-mmr {
-    background: var(--card-background, #fff);
-    border-radius: 12px;
-    padding: 1rem;
+    background: var(--card-background, rgba(15, 23, 42, 0.95));
+    border-radius: 16px;
+    padding: 1.25rem;
     margin-bottom: 1.5rem;
-    box-shadow: 0 10px 40px -20px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--history-card-shadow);
+    color: #fff;
   }
 
   .history-mmr-header {
@@ -562,7 +565,7 @@
 
   .history-mmr p {
     margin: 0.25rem 0 0;
-    color: var(--muted-text, #7a7a7a);
+    color: rgba(255, 255, 255, 0.65);
     font-size: 0.9rem;
   }
 

@@ -90,7 +90,10 @@
       const totalSeconds = sessions.reduce((sum, session) => {
         const started = new Date(session.startedTime);
         if (started >= todayStart && started <= todayEnd) {
-          const blocksSeconds = session.blocks.reduce((blockSum, block) => blockSum + Math.max(0, block.actualDuration), 0);
+          const blocksSeconds = session.blocks.reduce(
+            (blockSum, block) => blockSum + Math.max(0, block.actualDuration),
+            0
+          );
           return sum + blocksSeconds;
         }
         return sum;
@@ -194,42 +197,49 @@
   }
 </script>
 
-<section class="screen-content">
-  <header class="home-header">
+<section class="screen-content home-shell">
+  <div class="glass-card home-hero">
     <div>
-      <h1>Home</h1>
-      <p>Welcome to the Rocket League training journal.</p>
+      <p class="hero-accent">Rocket League training journal</p>
+      <h1 class="glow-heading">Home</h1>
+      <p>
+        Track presets, log quick skills, and compare your minutes to ranked results, all with a neon
+        dashboard that scales from mobile to desktop.
+      </p>
     </div>
-    <p class="health-status">
-      API status:
-      {#if apiHealthy === null}
-        <span class="badge pending">checking...</span>
-      {:else if apiHealthy}
-        <span class="badge healthy">online</span>
-      {:else}
-        <span class="badge offline">offline</span>
-      {/if}
-    </p>
-  </header>
+    <div class="home-hero-meta">
+      <div class="status-badge">
+        API status:
+        {#if apiHealthy === null}
+          checking...
+        {:else if apiHealthy}
+          online
+        {:else}
+          offline
+        {/if}
+      </div>
+      <span class="hero-chip">Boost ready · presets synced</span>
+    </div>
+  </div>
 
   <div class="dashboard-grid">
     <article class="dashboard-card">
-      <h2>Total minutes today</h2>
+      <h3>Minutes today</h3>
       <p class="dashboard-value">{totalMinutesToday}</p>
-      <p class="dashboard-subtitle">minutes trained</p>
+      <p class="dashboard-subtitle">Minutes logged so far</p>
       {#if loadingSessions}
-        <p class="form-note">Loading sessions…</p>
+        <p class="form-error">Loading sessions…</p>
       {:else if sessionError}
         <p class="form-error">{sessionError}</p>
       {/if}
     </article>
 
     <article class="dashboard-card">
-      <h2>Top skills (7d)</h2>
+      <h3>Top skills (7d)</h3>
       {#if summaryError}
         <p class="form-error">{summaryError}</p>
       {:else if topSkills.length === 0}
-        <p class="form-note">No focused training yet.</p>
+        <p class="form-error">No focused training yet.</p>
       {:else}
         <ul class="dashboard-list">
           {#each topSkills as skill}
@@ -243,11 +253,11 @@
     </article>
 
     <article class="dashboard-card">
-      <h2>Latest MMR</h2>
+      <h3>Latest MMR</h3>
       {#if mmrError}
         <p class="form-error">{mmrError}</p>
       {:else if latestMmr.length === 0}
-        <p class="form-note">Awaiting BakkesMod data.</p>
+        <p class="form-error">Awaiting BakkesMod data.</p>
       {:else}
         <ul class="dashboard-list">
           {#each latestMmr as record}
@@ -261,12 +271,12 @@
     </article>
   </div>
 
-  <section class="quick-timer">
+  <section class="glass-card quick-timer">
     <div class="section-header">
       <h2>Quick timer</h2>
-      <p>Log a single block tied to a skill.</p>
+      <p>Log a single block tied to a skill and keep momentum without leaving the dashboard.</p>
     </div>
-    <form class="quick-form" on:submit|preventDefault={submitQuickTimer}>
+    <form class="quick-timer-form" on:submit|preventDefault={submitQuickTimer}>
       <label>
         Skill
         {#if skillsLoading}
@@ -296,7 +306,11 @@
           disabled={quickSubmitting}
         />
       </label>
-      <button type="submit" class="btn-primary" disabled={quickSubmitting || skillsLoading || skills.length === 0}>
+      <button
+        type="submit"
+        class="button-neon"
+        disabled={quickSubmitting || skillsLoading || skills.length === 0}
+      >
         {quickSubmitting ? 'Logging…' : 'Log quick block'}
       </button>
     </form>
@@ -307,29 +321,27 @@
     {/if}
   </section>
 
-  <section class="preset-area">
+  <section class="preset-area glass-card">
     <div class="section-header">
-      <div>
-        <h2>Start preset</h2>
-        <p>Run a structured session and collect blocks.</p>
-      </div>
+      <h2>Start preset</h2>
+      <p>Run a structured session with glowing blocks that keep you on track.</p>
     </div>
 
     {#if loadingPresets}
-      <p>Loading presets…</p>
+      <p class="form-error">Loading presets…</p>
     {:else if presetError}
       <p class="form-error">{presetError}</p>
     {:else if presets.length === 0}
-      <p>No presets yet. Create one on the Presets screen to get started.</p>
+      <p class="form-error">No presets yet. Create one on the Presets screen to get started.</p>
     {:else}
       <div class="preset-grid">
         {#each presets as preset}
           <article class="preset-card">
-            <div class="preset-info">
+            <div>
               <span class="preset-name">{preset.name}</span>
               <small class="preset-blocks">{preset.blocks.length} block{preset.blocks.length === 1 ? '' : 's'}</small>
             </div>
-            <button type="button" on:click={() => beginPreset(preset)}>Start session</button>
+            <button type="button" on:click={() => beginPreset(preset)}>Launch preset</button>
           </article>
         {/each}
       </div>
@@ -338,178 +350,46 @@
 </section>
 
 <style>
-  .home-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .dashboard-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .dashboard-card {
-    background: var(--card-background, #fff);
-    border-radius: 14px;
-    padding: 1rem 1.25rem;
-    box-shadow: 0 12px 30px -20px rgba(0, 0, 0, 0.35);
+  .home-shell {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 1.25rem;
   }
 
-  .dashboard-value {
-    font-size: 2.5rem;
-    font-weight: 600;
-    margin: 0;
-  }
-
-  .dashboard-subtitle {
-    margin: 0;
-    color: var(--muted-text, #7a7a7a);
-  }
-
-  .dashboard-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-
-  .dashboard-list li {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.95rem;
-  }
-
-  .quick-timer {
-    background: var(--card-background, #fff);
-    border-radius: 14px;
-    padding: 1.25rem;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 12px 30px -20px rgba(0, 0, 0, 0.35);
-  }
-
-  .section-header h2 {
-    margin: 0;
+  .home-hero {
+    background: linear-gradient(135deg, rgba(249, 115, 211, 0.2), rgba(99, 102, 241, 0.35));
+    border: 0;
   }
 
   .section-header p {
-    margin-top: 0.25rem;
-    color: var(--muted-text, #7a7a7a);
-  }
-
-  .quick-form {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 0.85rem;
-    margin-top: 1rem;
-    align-items: flex-end;
-  }
-
-  .quick-form label {
-    display: flex;
-    flex-direction: column;
-    font-size: 0.85rem;
-    color: var(--muted-text, #7a7a7a);
-  }
-
-  .quick-form select,
-  .quick-form input {
+    color: var(--text-muted);
     margin-top: 0.35rem;
-    padding: 0.45rem 0.6rem;
-    border-radius: 8px;
-    border: 1px solid var(--border-color, #dcdcdc);
-    background: var(--input-background, #fff);
-    font-size: 1rem;
-  }
-
-  .quick-form .btn-primary {
-    padding: 0.65rem 1.25rem;
-    border-radius: 10px;
-    border: none;
-    background: #4a7cff;
-    color: #fff;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.2s;
-  }
-
-  .quick-form .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .quick-feedback {
-    margin-top: 0.65rem;
-    font-size: 0.9rem;
-  }
-
-  .form-success {
-    color: #1d4ed8;
-  }
-
-  .preset-area {
-    margin-bottom: 2rem;
-  }
-
-  .preset-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 1rem;
-  }
-
-  .preset-card {
-    background: var(--card-background, #fff);
-    border-radius: 14px;
-    padding: 1rem;
-    box-shadow: 0 10px 30px -20px rgba(0, 0, 0, 0.35);
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 0.85rem;
-  }
-
-  .preset-info {
-    display: flex;
-    flex-direction: column;
   }
 
   .preset-name {
-    font-size: 1.05rem;
+    display: block;
     font-weight: 600;
+    font-size: 1.1rem;
   }
 
   .preset-blocks {
-    color: var(--muted-text, #7a7a7a);
-  }
-
-  .preset-card button {
-    border: none;
-    border-radius: 10px;
-    padding: 0.6rem;
-    background: #111827;
-    color: #fff;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .form-note {
-    color: var(--muted-text, #7a7a7a);
     font-size: 0.9rem;
-    margin: 0;
+    color: var(--text-muted);
   }
 
-  .form-error {
-    color: #dc2626;
-    font-size: 0.9rem;
-    margin: 0;
+  .hero-chip {
+    font-size: 0.85rem;
+  }
+
+  .status-badge {
+    font-size: 0.85rem;
+  }
+
+  .quick-timer p {
+    color: var(--text-muted);
+  }
+
+  .preset-area > p {
+    margin-top: 0.75rem;
   }
 </style>

@@ -250,92 +250,211 @@
   }
 </script>
 
-<section class="screen-content">
-  <h1>Timer</h1>
-  <p>Start and monitor your current training session.</p>
+<section class="screen-content timer-shell">
+  <div class="glass-card timer-panel">
+    <div class="timer-heading">
+      <p class="hero-accent">Focused session</p>
+      <h1 class="glow-heading">Timer</h1>
+      <p>Run structured blocks, take notes, and finish the session with neon confidence.</p>
+    </div>
 
-  {#if !activePreset}
-    <p>Select a preset on the Home screen to start a timer.</p>
-  {:else}
-    <div class="timer-panel">
-      <div class="timer-header">
-        <strong class="preset-title">{activePreset.name}</strong>
-        <span class="blocks-count">{activePreset.blocks.length} block{activePreset.blocks.length === 1 ? '' : 's'}</span>
-      </div>
-
-      {#if sessionComplete}
-        <p class="session-done">All blocks complete. Great work!</p>
-      {:else if !currentBlock}
-        <p>This preset has no blocks to run.</p>
-      {:else}
-        <div class="timer-details">
-          <p class="skill-name">{currentSkillName}</p>
-          <p class="block-type">{currentBlock.type}</p>
-          <p class="duration">Planned: {formatDuration(currentBlock.durationSeconds)}</p>
-          <p class="remaining">Remaining: {formatDuration(Math.max(remainingSeconds, 0))}</p>
+    {#if !activePreset}
+      <p>Select a preset on the Home screen to start a timer.</p>
+    {:else}
+      <div class="timer-body">
+        <div class="timer-header">
+          <strong class="preset-title">{activePreset.name}</strong>
+          <span class="blocks-count">{activePreset.blocks.length} block{activePreset.blocks.length === 1 ? '' : 's'}</span>
         </div>
 
-        <label class="notes-label">
-          Block notes
-          <textarea
-            class="notes-input"
-            rows="3"
-            bind:value={currentBlockNotes}
-            on:input={(event) => handleNotesInput(event.currentTarget.value)}
-            placeholder="What did you focus on?"
-          ></textarea>
-        </label>
+        {#if sessionComplete}
+          <p class="session-done">All blocks complete. Great work!</p>
+        {:else if !currentBlock}
+          <p>This preset has no blocks to run.</p>
+        {:else}
+          <div class="timer-details">
+            <p class="skill-name">{currentSkillName}</p>
+            <p class="block-type">{currentBlock.type}</p>
+            <p class="duration">Planned: {formatDuration(currentBlock.durationSeconds)}</p>
+            <p class="remaining">Remaining: {formatDuration(Math.max(remainingSeconds, 0))}</p>
+          </div>
 
-        <div class="timer-controls">
-          <button type="button" on:click={previousBlock} disabled={currentBlockIndex === 0 || sessionComplete}>
-            Previous block
-          </button>
-          <button type="button" on:click={toggleTimer} disabled={!currentBlock || sessionComplete} class="primary">
-            {isRunning ? 'Pause' : 'Start'}
-          </button>
-          <button type="button" on:click={() => advanceBlock(true)} disabled={sessionComplete || !currentBlock}>
-            Skip block
-          </button>
-        </div>
-      {/if}
+          <label class="notes-label">
+            Block notes
+            <textarea
+              class="notes-input"
+              rows="3"
+              bind:value={currentBlockNotes}
+              on:input={(event) => handleNotesInput(event.currentTarget.value)}
+              placeholder="What did you focus on?"
+            ></textarea>
+          </label>
 
-      <div class="session-summary">
-        <h3>Session snapshot</h3>
-        <p>Source: preset</p>
-        <p>Preset: {activePreset.name}</p>
-        {#if sessionStartTime}
-          <p>Started: {sessionStartTime}</p>
-        {/if}
-        {#if sessionEndTime}
-          <p>Ended: {sessionEndTime}</p>
-        {/if}
-        <p>Recorded blocks: {sessionBlocks.length}</p>
-        <ul>
-          {#each sessionBlocks as block, index}
-            <li>
-              <strong>Block {index + 1}</strong>: {block.type} ({block.actualDuration}s actual) —
-              {block.notes || 'no notes'}
-            </li>
-          {/each}
-        </ul>
-        {#if sessionComplete && sessionBlocks.length > 0}
-          <div class="session-complete-actions">
-            <button
-              type="button"
-              class="primary"
-              on:click={handleSaveSession}
-              disabled={savingSession}
-            >
-              {savingSession ? 'Saving…' : 'Finish and save session'}
+          <div class="timer-controls">
+            <button type="button" on:click={previousBlock} disabled={currentBlockIndex === 0 || sessionComplete} class="button-soft">
+              Previous block
             </button>
-            {#if saveResultMessage}
-              <p class={`save-message ${saveResultMessage === 'Session saved!' ? 'success' : ''}`}>
-                {saveResultMessage}
-              </p>
-            {/if}
+            <button type="button" on:click={toggleTimer} disabled={!currentBlock || sessionComplete} class="button-neon">
+              {isRunning ? 'Pause' : 'Start'}
+            </button>
+            <button type="button" on:click={() => advanceBlock(true)} disabled={sessionComplete || !currentBlock} class="button-soft">
+              Skip block
+            </button>
           </div>
         {/if}
+
+        <div class="session-summary">
+          <h3>Session snapshot</h3>
+          <p>Source: preset</p>
+          <p>Preset: {activePreset.name}</p>
+          {#if sessionStartTime}
+            <p>Started: {sessionStartTime}</p>
+          {/if}
+          {#if sessionEndTime}
+            <p>Ended: {sessionEndTime}</p>
+          {/if}
+          <p>Recorded blocks: {sessionBlocks.length}</p>
+          <ul>
+            {#each sessionBlocks as block, index}
+              <li>
+                <strong>Block {index + 1}</strong>: {block.type} ({block.actualDuration}s actual) —
+                {block.notes || 'no notes'}
+              </li>
+            {/each}
+          </ul>
+          {#if sessionComplete && sessionBlocks.length > 0}
+            <div class="session-complete-actions">
+              <button
+                type="button"
+                class="button-neon"
+                on:click={handleSaveSession}
+                disabled={savingSession}
+              >
+                {savingSession ? 'Saving…' : 'Finish and save session'}
+              </button>
+              {#if saveResultMessage}
+                <p class={`save-message ${saveResultMessage === 'Session saved!' ? 'success' : ''}`}>
+                  {saveResultMessage}
+                </p>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </div>
-    </div>
-  {/if}
+    {/if}
+  </div>
 </section>
+
+<style>
+  .timer-shell {
+    display: flex;
+    justify-content: center;
+  }
+
+  .timer-panel {
+    width: 100%;
+    max-width: 800px;
+    border: 0;
+  }
+
+  .timer-heading {
+    margin-bottom: 1rem;
+  }
+
+  .timer-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .timer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .timer-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 1.1rem;
+  }
+
+  .timer-details .skill-name {
+    font-size: 1.6rem;
+    font-weight: 600;
+  }
+
+  .timer-details .block-type {
+    font-size: 0.9rem;
+    text-transform: uppercase;
+  }
+
+  .timer-controls {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .notes-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-top: 0.75rem;
+  }
+
+  .notes-input {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    color: #fff;
+    padding: 0.75rem;
+    font-family: inherit;
+  }
+
+  .session-summary {
+    margin-top: 0.5rem;
+    padding: 1rem;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .session-summary ul {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .session-summary li {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+
+  .session-complete-actions {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .save-message {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+
+  @media (max-width: 640px) {
+    .timer-controls {
+      flex-direction: column;
+    }
+  }
+</style>
