@@ -7,6 +7,30 @@ export type MmrRecord = {
   source: string;
 };
 
+export type Skill = {
+  id: number;
+  name: string;
+  category: string | null;
+  tags: string | null;
+  notes: string | null;
+};
+
+export type PresetBlock = {
+  id: number;
+  presetId: number;
+  orderIndex: number;
+  skillId: number;
+  type: string;
+  durationSeconds: number;
+  notes: string | null;
+};
+
+export type Preset = {
+  id: number;
+  name: string;
+  blocks: PresetBlock[];
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 
 function buildUrl(path: string) {
@@ -31,4 +55,37 @@ export async function getMmrRecords(): Promise<MmrRecord[]> {
 
   const data = (await response.json()) as MmrRecord[];
   return data;
+}
+
+export async function getSkills(): Promise<Skill[]> {
+  const response = await fetch(buildUrl('/api/skills'));
+  if (!response.ok) {
+    throw new Error('Unable to load skills');
+  }
+
+  return (await response.json()) as Skill[];
+}
+
+export async function getPresets(): Promise<Preset[]> {
+  const response = await fetch(buildUrl('/api/presets'));
+  if (!response.ok) {
+    throw new Error('Unable to load presets');
+  }
+
+  return (await response.json()) as Preset[];
+}
+
+export async function createSkill(payload: { name: string; category?: string; notes?: string }): Promise<Skill> {
+  const response = await fetch(buildUrl('/api/skills'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error || 'Unable to create skill');
+  }
+
+  return (await response.json()) as Skill;
 }

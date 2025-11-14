@@ -189,6 +189,43 @@ describe('presets endpoints', () => {
     ]);
   });
 
+  it('returns blocks ordered by orderIndex even if posted out of order', async () => {
+    const skillPayload = { name: 'Control' };
+    const skill = await request(app)
+      .post('/api/skills')
+      .send(skillPayload)
+      .set('Content-Type', 'application/json');
+
+    const payload = {
+      name: 'Order test',
+      blocks: [
+        {
+          orderIndex: 2,
+          skillId: skill.body.id,
+          type: 'rest',
+          durationSeconds: 120,
+          notes: 'second block',
+        },
+        {
+          orderIndex: 1,
+          skillId: skill.body.id,
+          type: 'focus',
+          durationSeconds: 180,
+          notes: 'first block',
+        },
+      ],
+    };
+
+    await request(app)
+      .post('/api/presets')
+      .send(payload)
+      .set('Content-Type', 'application/json');
+
+    const get = await request(app).get('/api/presets');
+    expect(get.statusCode).toBe(200);
+    expect(get.body[0].blocks.map((block) => block.orderIndex)).toEqual([1, 2]);
+  });
+
   it('rejects presets without a name', async () => {
     const response = await request(app)
       .post('/api/presets')

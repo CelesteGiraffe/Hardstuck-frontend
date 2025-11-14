@@ -79,10 +79,280 @@ body {
   line-height: 1.6;
 }
 
+.skills-muted {
+  margin-top: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.skill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 640px;
+}
+
+.skill-list li {
+  padding: 0.65rem 0.9rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.skill-list .category {
+  background: rgba(99, 102, 241, 0.12);
+  color: #c7d2fe;
+  padding: 0.15rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.skill-form {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 540px;
+}
+
+.skill-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.skill-form input,
+.skill-form textarea {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #f4f6fb;
+  padding: 0.65rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.skill-form textarea {
+  resize: vertical;
+}
+
+.skill-form button {
+  align-self: flex-start;
+  border: none;
+  border-radius: 999px;
+  padding: 0.65rem 1.5rem;
+  background: #6366f1;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.skill-form button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.skill-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.form-error {
+  color: #f87171;
+  font-size: 0.85rem;
+}
+
 .health-status {
   margin-top: 1rem;
   font-size: 0.95rem;
   color: rgba(255, 255, 255, 0.85);
+}
+
+.preset-area {
+  margin-top: 2rem;
+}
+
+.preset-area h2 {
+  margin-bottom: 0.75rem;
+  font-size: 1.2rem;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.preset-card {
+  padding: 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(99, 102, 241, 0.1);
+  color: inherit;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.preset-card:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  transform: translateY(-2px);
+}
+
+.preset-card .preset-name {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.preset-card .preset-blocks {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.timer-panel {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.timer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.preset-title {
+  font-size: 1.35rem;
+}
+
+.blocks-count {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.session-done {
+  margin: 0;
+  font-weight: 600;
+}
+
+.timer-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 1.15rem;
+}
+
+.timer-details .skill-name {
+  font-size: 1.5rem;
+}
+
+.timer-details .block-type {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.65);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.timer-details .duration,
+.timer-details .remaining {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.timer-controls {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.timer-controls button {
+  flex: 1;
+  min-width: 120px;
+  border-radius: 999px;
+  padding: 0.65rem 1.25rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.timer-controls button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.timer-controls button.primary {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.timer-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.notes-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 1rem;
+}
+
+.notes-input {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #f4f6fb;
+  padding: 0.75rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  min-height: 90px;
+}
+
+.session-summary {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.session-summary h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.session-summary ul {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.session-summary li {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .badge {

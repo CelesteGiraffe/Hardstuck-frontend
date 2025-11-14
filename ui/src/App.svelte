@@ -5,8 +5,10 @@
   import HistoryScreen from './lib/HistoryScreen.svelte';
   import SkillsScreen from './lib/SkillsScreen.svelte';
 
+  import { activeScreenId, navigateTo } from './lib/stores';
+
   type Screen = {
-    id: string;
+    id: 'home' | 'presets' | 'timer' | 'history' | 'skills';
     label: string;
     component: typeof HomeScreen;
   };
@@ -19,22 +21,16 @@
     { id: 'skills', label: 'Skills', component: SkillsScreen },
   ];
 
-  let activeScreenId = screens[0].id;
-
-  const selectScreen = (screenId: string) => {
-    activeScreenId = screenId;
-  };
-
-  $: ActiveScreen = screens.find((screen) => screen.id === activeScreenId)?.component ?? HomeScreen;
+  $: ActiveScreen = screens.find((screen) => screen.id === $activeScreenId)?.component ?? HomeScreen;
 </script>
 
 <div class="app-shell">
   <nav class="navigation">
     {#each screens as screen}
       <button
-        class:selected={screen.id === activeScreenId}
-        on:click={() => selectScreen(screen.id)}
-        aria-current={screen.id === activeScreenId ? 'page' : undefined}
+        class:selected={screen.id === $activeScreenId}
+        on:click={() => navigateTo(screen.id)}
+        aria-current={screen.id === $activeScreenId ? 'page' : undefined}
       >
         {screen.label}
       </button>

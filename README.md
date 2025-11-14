@@ -55,6 +55,7 @@ Avoid unnecessary frameworks, generated file forests, or cloud dependencies. Eve
 ### Training Features
 - Create and manage skills.
 - Build timer presets with blocks (focus time, rest time, VOD review, etc.).
+- Start a preset from the Home screen and let the timer guide you through each block.
 - Run training sessions with a live timer and block-by-block notes.
 - Log all actual durations and session notes.
 
