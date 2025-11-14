@@ -1,0 +1,8 @@
+{
+  "name": "rl-trainer-2",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "npm run test --prefix api && npm run check --prefix ui"
+  }
+}

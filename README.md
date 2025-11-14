@@ -133,6 +133,16 @@ Each part is kept small and isolated so the project is easy to maintain.
 
 3. (Later) Enable the BakkesMod plugin to start sending MMR logs automatically.
 
+## Testing
+
+Run everything with a single command from the project root:
+
+```
+npm test
+```
+
+This runs the API Jest suite and the UI `svelte-check`/TypeScript validation together so every feature is exercised in one step. Use the per-folder commands (`npm run test` in `api/`, `npm run check` in `ui/`) when you need to focus on just one layer.
+
 ---
 
 ## License
