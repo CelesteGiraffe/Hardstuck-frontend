@@ -75,6 +75,36 @@ export async function getPresets(): Promise<Preset[]> {
   return (await response.json()) as Preset[];
 }
 
+export type SessionBlockPayload = {
+  type: string;
+  skillIds: number[];
+  plannedDuration: number;
+  actualDuration: number;
+  notes?: string | null;
+};
+
+export type SessionPayload = {
+  startedTime: string;
+  finishedTime: string | null;
+  source: string;
+  presetId: number | null;
+  notes?: string | null;
+  blocks: SessionBlockPayload[];
+};
+
+export async function createSession(payload: SessionPayload): Promise<void> {
+  const response = await fetch(buildUrl('/api/sessions'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unable to save session' }));
+    throw new Error(error.error ?? 'Unable to save session');
+  }
+}
+
 export async function createSkill(payload: { name: string; category?: string; notes?: string }): Promise<Skill> {
   const response = await fetch(buildUrl('/api/skills'), {
     method: 'POST',

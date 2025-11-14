@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { selectedPreset } from './stores';
-  import { getSkills } from './api';
-  import type { Preset, PresetBlock, Skill } from './api';
+  import { createSession, getSkills } from './api';
+  import type { Preset, PresetBlock, Skill, SessionBlockPayload } from './api';
 
   type RecordedBlock = {
     skillIds: number[];
@@ -26,6 +26,8 @@
   let currentBlockNotes = '';
   let blockStartTimestamp: number | null = null;
   let lastPreparedBlockIndex: number | null = null;
+  let savingSession = false;
+  let saveResultMessage: string | null = null;
 
   const unsubscribe = selectedPreset.subscribe((preset) => {
     resetForPreset(preset);
@@ -56,6 +58,7 @@
     currentBlockNotes = '';
     blockStartTimestamp = null;
     lastPreparedBlockIndex = null;
+    saveResultMessage = null;
   }
 
   onMount(async () => {
@@ -204,6 +207,47 @@
     const seconds = value % 60;
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
   }
+
+  async function handleSaveSession() {
+    if (
+      !sessionComplete ||
+      sessionBlocks.length === 0 ||
+      savingSession ||
+      !sessionStartTime ||
+      !sessionEndTime
+    ) {
+      return;
+    }
+
+    savingSession = true;
+    saveResultMessage = null;
+
+    const payload = {
+      startedTime: sessionStartTime,
+      finishedTime: sessionEndTime,
+      source: 'preset',
+      presetId: activePreset?.id ?? null,
+      notes: null,
+      blocks: sessionBlocks.map<SessionBlockPayload>((block) => ({
+        type: block.type,
+        skillIds: block.skillIds,
+        plannedDuration: block.plannedDuration,
+        actualDuration: block.actualDuration,
+        notes: block.notes || null,
+      })),
+    };
+
+    try {
+      await createSession(payload);
+      saveResultMessage = 'Session saved!';
+      resetForPreset(activePreset);
+    } catch (error) {
+      console.error('Failed to save session', error);
+      saveResultMessage = 'Unable to save session right now.';
+    } finally {
+      savingSession = false;
+    }
+  }
 </script>
 
 <section class="screen-content">
@@ -274,6 +318,23 @@
             </li>
           {/each}
         </ul>
+        {#if sessionComplete && sessionBlocks.length > 0}
+          <div class="session-complete-actions">
+            <button
+              type="button"
+              class="primary"
+              on:click={handleSaveSession}
+              disabled={savingSession}
+            >
+              {savingSession ? 'Saving…' : 'Finish and save session'}
+            </button>
+            {#if saveResultMessage}
+              <p class={`save-message ${saveResultMessage === 'Session saved!' ? 'success' : ''}`}>
+                {saveResultMessage}
+              </p>
+            {/if}
+          </div>
+        {/if}
       </div>
     </div>
   {/if}
