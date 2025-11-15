@@ -48,6 +48,13 @@
   let lastMmrMeta: string | null = null;
   let cacheNote = 'Fetching fresh stats…';
 
+  const dailyGoalMinutes = 180;
+
+  let topSkillFocus: SkillSummary | null = null;
+  let minutesProgress = 0;
+  let apiStatusLabel = 'Checking…';
+  let apiStatusMessage: string | null = null;
+
   let checklistItems: ChecklistItem[] = [];
 
   $: skillList = $skillsStore.skills;
@@ -138,6 +145,20 @@
     lastMmrMeta,
     cacheNote,
   });
+
+  $: topSkillFocus = topSkills[0] ?? null;
+  $: minutesProgress = Math.round(
+    Math.min(100, (totalMinutesToday / dailyGoalMinutes) * 100)
+  );
+  $: apiStatusLabel = $isApiOffline
+    ? 'Offline'
+    : apiHealthy === null
+    ? 'Checking…'
+    : apiHealthy
+    ? 'Online'
+    : 'Unhealthy';
+  $: apiStatusMessage =
+    healthError ?? $apiOfflineMessage ?? (apiHealthy ? 'API is online' : 'Waiting for syncing');
 
 
   function calculateMinutesToday(currentSessions: Session[]) {
@@ -245,30 +266,47 @@
 </script>
 
 <section class="screen-content home-shell">
-  <div class="glass-card home-hero">
-    <div>
-      <p class="hero-accent">Rocket League training journal</p>
-      <h1 class="glow-heading">Home</h1>
-      <p>
-        Track presets, log quick skills, and compare your minutes to ranked results, all with a neon
-        dashboard that scales from mobile to desktop.
-      </p>
-    </div>
-    <div class="home-hero-meta">
-      <div class="status-badge">
-        API status:
-        {#if $isApiOffline}
-          offline
-        {:else if apiHealthy === null}
-          checking...
-        {:else}
-          online
-        {/if}
+  <div class="home-grid">
+    <section class="home-card glass-card hero-summary">
+      <div class="section-header">
+        <p class="hero-accent">Rocket League training journal</p>
+        <h1 class="glow-heading">Home</h1>
+        <p>
+          Track presets, log quick skills, and compare your minutes to ranked results, all with a neon
+          dashboard that scales from mobile to desktop.
+        </p>
       </div>
-      <div class="hero-health">
-        {#if healthError || $apiOfflineMessage}
-          <p class="form-error hero-health-error">{healthError ?? $apiOfflineMessage}</p>
-        {/if}
+      <div class="stat-badges">
+        <div class="stat-badge">
+          <div class="stat-label">Minutes trained today</div>
+          <div class="stat-value">{totalMinutesToday}</div>
+          <div class="stat-progress">
+            <span class="stat-progress-fill" style={`width: ${minutesProgress}%`}></span>
+          </div>
+          <small>{minutesProgress >= 100 ? 'Goal reached!' : `Goal: ${dailyGoalMinutes} min`}</small>
+        </div>
+        <div class="stat-badge">
+          <div class="stat-label">Top skill focus</div>
+          {#if topSkillFocus}
+            <div class="stat-value">{topSkillFocus.name}</div>
+            <p class="stat-subtext">{topSkillFocus.minutes} min · last 7 days</p>
+          {:else}
+            <div class="stat-value">No focus yet</div>
+            <p class="stat-subtext">Log a block to spotlight a skill</p>
+          {/if}
+        </div>
+      </div>
+      <p class="cache-note">{cacheNote}</p>
+      <div class="cta-row" role="region" aria-labelledby="api-health-heading">
+        <div>
+          <p id="api-health-heading" class="cta-title">API health</p>
+          <p class="cta-copy">
+            Status: <strong>{apiStatusLabel}</strong>
+            {#if apiStatusMessage}
+              · {apiStatusMessage}
+            {/if}
+          </p>
+        </div>
         <button
           type="button"
           class="button-neon hero-health-button"
@@ -278,48 +316,102 @@
           {healthChecking ? 'Checking…' : 'Retry API health'}
         </button>
       </div>
-      <span class="hero-chip">Boost ready · presets synced</span>
-    </div>
-  </div>
+      <div class="cta-row" role="region" aria-labelledby="plugin-install-heading">
+        <div>
+          <p id="plugin-install-heading" class="cta-title">MMR plugin</p>
+          <p class="cta-copy">Install BakkesMod to sync match data automatically.</p>
+        </div>
+        <a class="button-soft cta-link" href={pluginInstallUrl} target="_blank" rel="noreferrer">
+          Install plugin
+        </a>
+      </div>
+    </section>
 
-  <div class="dashboard-grid">
-    <article class="dashboard-card">
-      <h3>Minutes today</h3>
-      <p class="dashboard-value">{totalMinutesToday}</p>
-      <p class="dashboard-subtitle">Minutes logged so far</p>
-      {#if loadingSessions}
-        <p class="form-error">Loading sessions…</p>
-      {:else if sessionError}
-        <p class="form-error">{sessionError}</p>
+    <section class="home-card glass-card quick-timer">
+      <div class="section-header">
+        <h2>Quick timer</h2>
+        <p>Log a single block tied to a skill and keep momentum without leaving the dashboard.</p>
+      </div>
+      <form class="quick-timer-form" on:submit|preventDefault={submitQuickTimer}>
+        <label>
+          Skill
+          {#if skillsLoading}
+            <select disabled>
+              <option>Loading skills…</option>
+            </select>
+          {:else if skillList.length === 0}
+            <select disabled>
+              <option>No skills yet</option>
+            </select>
+          {:else}
+            <select
+              value={quickSkillId ?? ''}
+              on:change={(event) => (quickSkillId = Number((event.currentTarget as HTMLSelectElement).value))}
+            >
+              {#each skillList as skill}
+                <option value={skill.id}>{skill.name}</option>
+              {/each}
+            </select>
+          {/if}
+        </label>
+        <label>
+          Minutes
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={quickMinutes}
+            on:input={(event) => (quickMinutes = (event.currentTarget as HTMLInputElement).value)}
+            disabled={quickSubmitting}
+          />
+        </label>
+        <button
+          type="submit"
+          class="button-neon"
+          disabled={quickSubmitting || skillsLoading || skillList.length === 0}
+        >
+          {quickSubmitting ? 'Logging…' : 'Log quick block'}
+        </button>
+      </form>
+      {#if skillsError}
+        <p class="form-error quick-feedback">{skillsError}</p>
       {/if}
-    </article>
-
-    <article class="dashboard-card">
-      <h3>Top skills (7d)</h3>
-      {#if summaryError}
-        <p class="form-error">{summaryError}</p>
-      {:else if topSkills.length === 0}
-        <p class="form-error">No focused training yet.</p>
-      {:else}
-        <ul class="dashboard-list">
-          {#each topSkills as skill}
-            <li>
-              <span>{skill.name}</span>
-              <strong>{skill.minutes} min</strong>
-            </li>
-          {/each}
-        </ul>
+      {#if quickError}
+        <p class="form-error quick-feedback">{quickError}</p>
+      {:else if quickSuccess}
+        <p class="form-success quick-feedback">{quickSuccess}</p>
       {/if}
-    </article>
+    </section>
 
-    <article class="dashboard-card">
-      <h3>Latest MMR</h3>
+    <section class="home-card glass-card readiness-checklist">
+      <div class="section-header">
+        <h2>Readiness checklist</h2>
+        <p>Confirm the essentials before starting a fresh session.</p>
+      </div>
+      <ul class="readiness-list">
+        {#each checklistItems as item}
+          <li class:item-ready={item.ready} class:item-missing={!item.ready}>
+            <div class="readiness-row">
+              <strong>{item.label}</strong>
+              <span>{item.value}</span>
+            </div>
+            <p>{item.helper}</p>
+          </li>
+        {/each}
+      </ul>
+    </section>
+
+    <section class="home-card glass-card mmr-card">
+      <div class="section-header">
+        <h2>Recent MMR snapshots</h2>
+        <p>Grab the latest data from the plugin or manual entries.</p>
+      </div>
       {#if mmrError}
         <p class="form-error">{mmrError}</p>
       {:else if latestMmr.length === 0}
         <p class="form-error">Awaiting BakkesMod data.</p>
       {:else}
-        <ul class="dashboard-list">
+        <ul class="dashboard-list mmr-list">
           {#each latestMmr as record}
             <li>
               <span>{record.playlist}</span>
@@ -328,64 +420,11 @@
           {/each}
         </ul>
       {/if}
-    </article>
+      {#if lastMmrMeta}
+        <p class="meta-note">{lastMmrMeta}</p>
+      {/if}
+    </section>
   </div>
-
-  <section class="glass-card quick-timer">
-    <div class="section-header">
-      <h2>Quick timer</h2>
-      <p>Log a single block tied to a skill and keep momentum without leaving the dashboard.</p>
-    </div>
-    <form class="quick-timer-form" on:submit|preventDefault={submitQuickTimer}>
-      <label>
-        Skill
-        {#if skillsLoading}
-          <select disabled>
-            <option>Loading skills…</option>
-          </select>
-        {:else if skillList.length === 0}
-          <select disabled>
-            <option>No skills yet</option>
-          </select>
-        {:else}
-          <select
-            value={quickSkillId ?? ''}
-            on:change={(event) => (quickSkillId = Number((event.currentTarget as HTMLSelectElement).value))}
-          >
-            {#each skillList as skill}
-              <option value={skill.id}>{skill.name}</option>
-            {/each}
-          </select>
-        {/if}
-      </label>
-      <label>
-        Minutes
-        <input
-          type="number"
-          min="1"
-          step="1"
-          value={quickMinutes}
-          on:input={(event) => (quickMinutes = (event.currentTarget as HTMLInputElement).value)}
-          disabled={quickSubmitting}
-        />
-      </label>
-      <button
-        type="submit"
-        class="button-neon"
-        disabled={quickSubmitting || skillsLoading || skillList.length === 0}
-      >
-        {quickSubmitting ? 'Logging…' : 'Log quick block'}
-      </button>
-    </form>
-    {#if skillsError}
-      <p class="form-error quick-feedback">{skillsError}</p>
-    {/if}
-    {#if quickError}
-      <p class="form-error quick-feedback">{quickError}</p>
-    {:else if quickSuccess}
-      <p class="form-success quick-feedback">{quickSuccess}</p>
-    {/if}
-  </section>
 
   <section class="preset-area glass-card">
     <div class="section-header">
@@ -414,66 +453,3 @@
     {/if}
   </section>
 </section>
-
-<style>
-  .home-shell {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .home-hero {
-    background: linear-gradient(135deg, rgba(249, 115, 211, 0.2), rgba(99, 102, 241, 0.35));
-    border: 0;
-  }
-
-  .section-header p {
-    color: var(--text-muted);
-    margin-top: 0.35rem;
-  }
-
-  .preset-name {
-    display: block;
-    font-weight: 600;
-    font-size: 1.1rem;
-  }
-
-  .preset-blocks {
-    font-size: 0.9rem;
-    color: var(--text-muted);
-  }
-
-  .hero-chip {
-    font-size: 0.85rem;
-  }
-
-  .status-badge {
-    font-size: 0.85rem;
-  }
-
-  .quick-timer p {
-    color: var(--text-muted);
-  }
-
-  .preset-area > p {
-    margin-top: 0.75rem;
-  }
-
-  .hero-health {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-
-  .hero-health-error {
-    margin: 0;
-    font-size: 0.85rem;
-  }
-
-  .hero-health-button {
-    font-size: 0.8rem;
-    padding: 0.35rem 0.85rem;
-  }
-
-
-</style>
