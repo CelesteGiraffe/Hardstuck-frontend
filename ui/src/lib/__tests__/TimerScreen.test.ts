@@ -1,8 +1,20 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, expect, test } from 'vitest';
-import TimerScreen from '../TimerScreen.svelte';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import type { Mock } from 'vitest';
+import type { Preset, Session, SkillSummary } from '../api';
 import { selectedPreset } from '../stores';
-import type { Preset } from '../api';
+import { sessionsQuery, weeklySkillSummaryQuery } from '../queries';
+
+vi.mock('../api', async () => {
+  const actual = await vi.importActual<typeof import('../api')>('../api');
+  return {
+    ...actual,
+    createSession: vi.fn(),
+  };
+});
+
+import TimerScreen from '../TimerScreen.svelte';
+import { createSession } from '../api';
 
 const samplePreset: Preset = {
   id: 1,
@@ -29,15 +41,29 @@ const samplePreset: Preset = {
   ],
 };
 
+const createSessionMock = createSession as Mock;
+let sessionsRefreshMock: Mock;
+let weeklySummaryRefreshMock: Mock;
+
 beforeEach(() => {
   selectedPreset.set(samplePreset);
   localStorage.clear();
+  createSessionMock.mockReset();
+  createSessionMock.mockResolvedValue({} as Session);
+  sessionsRefreshMock = vi
+    .spyOn(sessionsQuery, 'refresh')
+    .mockResolvedValue([] as Session[]) as Mock;
+  weeklySummaryRefreshMock = vi
+    .spyOn(weeklySkillSummaryQuery, 'refresh')
+    .mockResolvedValue([] as SkillSummary[]) as Mock;
 });
 
 afterEach(() => {
   cleanup();
   selectedPreset.set(null);
   localStorage.clear();
+  sessionsRefreshMock.mockRestore();
+  weeklySummaryRefreshMock.mockRestore();
 });
 
 test('loads stored audio preference when available', () => {
@@ -68,4 +94,54 @@ test('shows note badge after completing block with existing notes', async () => 
   await waitFor(() => {
     expect(getByText('Notes saved')).toBeInTheDocument();
   });
+});
+
+test('shows save CTA when session completes and refreshes on successful save', async () => {
+  let resolveCreate: (() => void) | null = null;
+  createSessionMock.mockImplementationOnce(
+    () =>
+      new Promise<Session>((resolve) => {
+        resolveCreate = () => resolve({} as Session);
+      })
+  );
+
+  const { getByText, getByRole, queryByRole } = render(TimerScreen);
+  const skipButton = getByText('Skip');
+  await fireEvent.click(skipButton);
+  await fireEvent.click(skipButton);
+
+  const saveButton = await waitFor(() => getByRole('button', { name: 'Save session' }));
+  await fireEvent.click(saveButton);
+  expect(saveButton).toBeDisabled();
+  expect(resolveCreate).toBeTruthy();
+  resolveCreate!();
+
+  await waitFor(() => expect(createSessionMock).toHaveBeenCalled());
+  await waitFor(() => expect(sessionsRefreshMock).toHaveBeenCalled());
+  expect(weeklySummaryRefreshMock).toHaveBeenCalled();
+  await waitFor(() => {
+    expect(queryByRole('button', { name: 'Save session' })).not.toBeInTheDocument();
+  });
+});
+
+test('shows save error when the API fails and keeps notes intact', async () => {
+  createSessionMock.mockRejectedValueOnce(new Error('network fail'));
+
+  const { getByText, getByRole, getByTestId } = render(TimerScreen);
+  const notesInput = getByTestId('session-notes') as HTMLTextAreaElement;
+  await fireEvent.input(notesInput, { target: { value: 'Still here' } });
+
+  const skipButton = getByText('Skip');
+  await fireEvent.click(skipButton);
+  await fireEvent.click(skipButton);
+
+  const saveButton = await waitFor(() => getByRole('button', { name: 'Save session' }));
+  await fireEvent.click(saveButton);
+
+  await waitFor(() => {
+    expect(getByText('network fail')).toBeInTheDocument();
+  });
+
+  expect(notesInput.value).toBe('Still here');
+  expect(saveButton).not.toBeDisabled();
 });

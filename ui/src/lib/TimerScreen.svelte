@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { selectedPreset } from './stores';
-  import type { Preset, PresetBlock } from './api';
+  import { createSession } from './api';
+  import { sessionsQuery, weeklySkillSummaryQuery } from './queries';
+  import type { Preset, PresetBlock, SessionBlockPayload, SessionPayload } from './api';
 
   const formatDuration = (seconds = 0) => {
     const totalSeconds = Math.max(0, Math.round(seconds));
@@ -37,6 +39,9 @@
   let activeBlockKey: number | null = null;
   let currentBlockOverrides: { remaining?: string; actual?: string } = {};
   let timelineEntries: TimelineEntry[] = [];
+  let savePending = false;
+  let saveSuccess: string | null = null;
+  let saveError: string | null = null;
 
   type TimelineEntry = {
     key: number;
@@ -183,6 +188,8 @@
     if (sessionComplete) {
       resetTimerState();
     }
+    saveSuccess = null;
+    saveError = null;
     if (!sessionStartTime) {
       sessionStartTime = Date.now();
     }
@@ -290,6 +297,60 @@
     gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.2);
     oscillator.stop(context.currentTime + 0.2);
     oscillator.onended = () => context.close();
+  }
+
+  function buildSessionBlocks(): SessionBlockPayload[] {
+    return presetBlocks.map((block, index) => {
+      const key = getBlockKey(block, index);
+      const overrideValues = blockOverrides[key] ?? {};
+      const manualActual = parseManualValue(overrideValues.actual);
+      const planned = block.durationSeconds ?? 0;
+      const actual = manualActual ?? planned;
+      const userNotes = blockNotes[key]?.trim();
+      const defaultNotes = block.notes?.trim();
+      const notes = userNotes ?? defaultNotes;
+
+      return {
+        type: block.type,
+        skillIds: [block.skillId],
+        plannedDuration: planned,
+        actualDuration: actual,
+        notes: notes || undefined,
+      };
+    });
+  }
+
+  function createSessionPayload(): SessionPayload {
+    const startedTime = sessionStartTime ?? Date.now();
+    const finishedTime = sessionEndTime ?? Date.now();
+    const trimmedNotes = sessionNotes.trim();
+
+    return {
+      startedTime: new Date(startedTime).toISOString(),
+      finishedTime: new Date(finishedTime).toISOString(),
+      source: 'timer',
+      presetId: activePreset?.id ?? null,
+      notes: trimmedNotes || undefined,
+      blocks: buildSessionBlocks(),
+    };
+  }
+
+  async function saveSession() {
+    if (savePending || !sessionComplete || !hasPreset) return;
+    savePending = true;
+    saveError = null;
+    saveSuccess = null;
+
+    try {
+  await createSession(createSessionPayload());
+  saveSuccess = 'Session saved!';
+      await Promise.all([sessionsQuery.refresh(), weeklySkillSummaryQuery.refresh()]);
+      resetTimerState();
+    } catch (error) {
+      saveError = error instanceof Error ? error.message : 'Unable to save session';
+    } finally {
+      savePending = false;
+    }
   }
 
   function formatTimeLabel(timestamp: number | null) {
@@ -587,6 +648,52 @@
         data-testid="session-notes"
       ></textarea>
     </section>
+    {#if sessionComplete}
+      <section class="screen-content save-section glass-card">
+        <div class="save-section-header">
+          <div>
+            <p class="hero-accent">Session complete</p>
+            <h3>Capture today&apos;s run</h3>
+            <p class="section-copy">
+              Save the timeline, overrides, and notes so your Home screen stays up to date.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="timer-save-button"
+            data-testid="save-session-button"
+            on:click={saveSession}
+            disabled={savePending}
+          >
+            {savePending ? 'Saving…' : 'Save session'}
+          </button>
+        </div>
+        <p class="save-helper section-copy">
+          The save button is disabled until the current request finishes. Notes and overrides stay intact if
+          a save attempt fails.
+        </p>
+        {#if savePending || saveError || saveSuccess}
+          <p class="save-feedback" aria-live="polite">
+            {#if savePending}
+              Saving session…
+            {:else if saveError}
+              <span class="save-error">{saveError}</span>
+            {:else if saveSuccess}
+              <span class="save-success">{saveSuccess}</span>
+            {/if}
+          </p>
+        {/if}
+      </section>
+    {/if}
+    {#if !sessionComplete && (saveSuccess || saveError)}
+      <p
+        class={`save-feedback ${saveSuccess ? 'save-success' : 'save-error'}`}
+        aria-live="polite"
+        data-testid="save-feedback"
+      >
+        {saveSuccess ?? saveError}
+      </p>
+    {/if}
   {/if}
 </main>
 
@@ -999,6 +1106,55 @@
     font-size: 0.9rem;
     min-height: 140px;
     resize: vertical;
+  }
+
+  .save-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .save-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .timer-save-button {
+    border: none;
+    border-radius: var(--card-radius);
+    padding: 0.65rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    background: linear-gradient(135deg, #f472b6, #6366f1);
+    color: #fff;
+    box-shadow: 0 10px 25px rgba(99, 102, 241, 0.35);
+  }
+
+  .timer-save-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .save-helper {
+    margin: 0;
+  }
+
+  .save-feedback {
+    margin: 0;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .save-success {
+    color: #4ade80;
+  }
+
+  .save-error {
+    color: #f87171;
   }
 
   @media (max-width: 640px) {
