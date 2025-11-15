@@ -9,7 +9,7 @@
     "test:ui": "npm run test:base --prefix ui",
     "test:bakkes": "npm run test:bakkes --prefix ui",
     "test:full": "npm run test:ui && npm run test:bakkes",
-    "check:ui": "npm run check --prefix ui -- --host"
+    "check:ui": "npm run check --prefix ui"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

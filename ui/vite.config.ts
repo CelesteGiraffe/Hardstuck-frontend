@@ -23,12 +23,6 @@ const baseTestEnvironment: Record<string, unknown> = {
 }
 
 const sveltePlugins = svelte({
-  hot: !isTest,
-  emitCss: !isTest,
-  compilerOptions: {
-    dev: !isTest,
-    hmr: !isTest,
-  },
   exclude: isTest ? [/vite\/dist\/client\/env\.mjs($|\?)/] : undefined,
 })
 

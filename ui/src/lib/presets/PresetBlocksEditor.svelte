@@ -1,14 +1,7 @@
 <script lang="ts">
   import { useSkills } from '../useSkills';
   import type { Skill } from '../api';
-
-  export type BlockEdit = {
-    id?: number;
-    skillId: number;
-    type: string;
-    durationSeconds: number;
-    notes: string;
-  };
+  import type { BlockEdit } from './types';
 
   export let blocks: BlockEdit[] = [];
   export let disabled = false;

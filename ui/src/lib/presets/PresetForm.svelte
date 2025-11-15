@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import PresetBlocksEditor, { type BlockEdit } from './PresetBlocksEditor.svelte';
+  import PresetBlocksEditor from './PresetBlocksEditor.svelte';
+  import type { BlockEdit } from './types';
   import { savePreset } from '../api';
   import type { Preset, PresetPayload, Skill } from '../api';
   import { useSkills } from '../useSkills';
@@ -126,19 +127,13 @@
     gap: 0.35rem;
   }
 
-  input,
-  select,
-  textarea {
+  input {
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.2);
     background: rgba(15, 23, 42, 0.8);
     color: #fff;
     padding: 0.5rem 0.75rem;
     font-size: 0.95rem;
-  }
-
-  textarea {
-    resize: vertical;
   }
 
   .blocks {
