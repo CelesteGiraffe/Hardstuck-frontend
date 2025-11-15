@@ -1,10 +1,10 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Mock } from 'vitest';
-import type { Preset, Session, SkillSummary } from '../api';
+import type { Preset, Session, Skill, SkillSummary } from '../api';
 import { get } from 'svelte/store';
 import { selectedPreset } from '../stores';
-import { sessionsQuery, weeklySkillSummaryQuery } from '../queries';
+import { presetsQuery, sessionsQuery, skillsQuery, weeklySkillSummaryQuery } from '../queries';
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api');
@@ -42,12 +42,22 @@ const samplePreset: Preset = {
   ],
 };
 
+const sampleSkill: Skill = {
+  id: 42,
+  name: 'Aerial control',
+  category: 'Mechanics',
+  tags: 'air,demo',
+  notes: 'focus on ceiling shots',
+};
+
 const createSessionMock = createSession as Mock;
 let sessionsRefreshMock: Mock;
 let weeklySummaryRefreshMock: Mock;
 
 beforeEach(() => {
   selectedPreset.set(samplePreset);
+  presetsQuery.setData([samplePreset]);
+  skillsQuery.setData([sampleSkill]);
   localStorage.clear();
   createSessionMock.mockReset();
   createSessionMock.mockResolvedValue({} as Session);
@@ -60,11 +70,14 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   selectedPreset.set(null);
   localStorage.clear();
   sessionsRefreshMock.mockRestore();
   weeklySummaryRefreshMock.mockRestore();
+  presetsQuery.reset();
+  skillsQuery.reset();
 });
 
 test('loads stored audio preference when available', () => {
@@ -146,4 +159,59 @@ test('shows save error when the API fails and keeps notes intact', async () => {
 
   expect(notesInput.value).toBe('Still here');
   expect(saveButton).not.toBeDisabled();
+});
+
+test('counts down the active block and completes via ticker updates', async () => {
+  vi.useFakeTimers();
+  const { getByRole, getByTestId, getByText } = render(TimerScreen);
+  const startButton = getByRole('button', { name: 'Start' });
+  await fireEvent.click(startButton);
+
+  const firstActual = getByTestId('timeline-actual-1');
+  vi.advanceTimersByTime(1000);
+  await waitFor(() => expect(firstActual.textContent).toBe('0m 1s'));
+
+  vi.advanceTimersByTime(59000);
+  await waitFor(() => expect(firstActual.textContent).toBe('1m'));
+  expect(getByText('Active')).toBeInTheDocument();
+});
+
+test('preserves custom block notes once the block completes', async () => {
+  const noNotesPreset = {
+    ...samplePreset,
+    blocks: samplePreset.blocks.map((block, index) =>
+      index === 0 ? { ...block, notes: '' } : block
+    ),
+  } satisfies Preset;
+
+  selectedPreset.set(noNotesPreset);
+  presetsQuery.setData([noNotesPreset]);
+
+  const { getAllByPlaceholderText, getByText } = render(TimerScreen);
+  const blockNoteInput = getAllByPlaceholderText('Capture thoughts or reminders')[0];
+  await fireEvent.input(blockNoteInput, { target: { value: 'Focus flicks' } });
+
+  const skipButton = getByText('Skip');
+  await fireEvent.click(skipButton);
+  await waitFor(() => expect(getByText('Notes saved')).toBeInTheDocument());
+});
+
+test('save workflow sends overrides and notes to createSession', async () => {
+  const { getByRole, getByTestId, getByText } = render(TimerScreen);
+  const actualOverride = getByTestId('actual-override-input');
+  await fireEvent.input(actualOverride, { target: { value: '18' } });
+  const notesTextarea = getByTestId('session-notes') as HTMLTextAreaElement;
+  await fireEvent.input(notesTextarea, { target: { value: 'Smooth reps' } });
+
+  await fireEvent.click(getByRole('button', { name: 'Start' }));
+  await fireEvent.click(getByText('Skip'));
+  await fireEvent.click(getByText('Skip'));
+
+  const saveButton = await waitFor(() => getByRole('button', { name: 'Save session' }));
+  await fireEvent.click(saveButton);
+
+  await waitFor(() => expect(createSessionMock).toHaveBeenCalled());
+  const payload = createSessionMock.mock.calls[0][0];
+  expect(payload.notes).toBe('Smooth reps');
+  expect(payload.blocks[0].actualDuration).toBe(18);
 });
