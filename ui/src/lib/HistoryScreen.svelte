@@ -9,6 +9,7 @@
   } from './api';
   import type { Session, SessionBlock, SkillSummary, MmrRecord } from './api';
   import { useSkills } from './useSkills';
+  import html2canvas from 'html2canvas';
 
   let sessions: Session[] = [];
   let selectedSession: Session | null = null;
@@ -28,6 +29,10 @@
   const CHART_PADDING = 32;
   const CHART_INNER_WIDTH = CHART_VIEW_WIDTH - CHART_PADDING * 2;
   const CHART_INNER_HEIGHT = CHART_VIEW_HEIGHT - CHART_PADDING * 2;
+  const COMPARISON_CHART_WIDTH = 260;
+  const COMPARISON_CHART_HEIGHT = 140;
+  const COMPARISON_PADDING = 24;
+  const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000;
 
   const HISTORY_WINDOW_DAYS = 30;
 
@@ -78,6 +83,11 @@
   let manualError: string | null = null;
   let manualSuccess: string | null = null;
   let manualPlaylistValue = '';
+  let latestPluginRecord: MmrRecord | null = null;
+  let dataStale = false;
+  let exportMessage: string | null = null;
+  let exportError: string | null = null;
+  let exportLoading = false;
 
   onMount(() => {
     loadSummary();
@@ -253,6 +263,204 @@
     return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
+  function escapeCsvValue(value: string | number | null | undefined) {
+    const text = value === null || value === undefined ? '' : String(value);
+    if (/"|,|\n/.test(text)) {
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+  }
+
+  function buildHistoryCsv() {
+    const rows: string[][] = [];
+    rows.push([
+      'Session Date',
+      'Duration (min)',
+      'Source',
+      'Preset',
+      'Skills',
+      'Notes',
+    ]);
+    sessions.forEach((session) => {
+      const blockForSkills =
+        session.blocks[0] ??
+        ({
+          id: 0,
+          sessionId: session.id,
+          type: '',
+          skillIds: [],
+          plannedDuration: 0,
+          actualDuration: 0,
+          notes: null,
+        } as SessionBlock);
+      rows.push([
+        session.startedTime,
+        String(totalDurationMinutes(session)),
+        session.source,
+        getPresetName(session),
+        getBlockSkills(blockForSkills),
+        session.notes ?? '',
+      ]);
+    });
+
+    rows.push([]);
+    rows.push(['MMR Playlist', 'Timestamp', 'MMR', 'Games Played Diff', 'Source']);
+    const mmrRecordsForCsv = Object.values(mmrSeriesByPlaylist).flat().sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    mmrRecordsForCsv.forEach((record) => {
+      rows.push([
+        record.playlist,
+        record.timestamp,
+        String(record.mmr),
+        String(record.gamesPlayedDiff),
+        record.source,
+      ]);
+    });
+
+    return rows.map((row) => row.map((value) => escapeCsvValue(value)).join(',')).join('\n');
+  }
+
+  async function copyTextToClipboard(text: string) {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+  }
+
+  async function copyHistoryCsv() {
+    exportMessage = null;
+    exportError = null;
+    exportLoading = true;
+    try {
+      const csv = buildHistoryCsv();
+      await copyTextToClipboard(csv);
+      exportMessage = 'History CSV copied to clipboard';
+    } catch (err) {
+      exportError = err instanceof Error ? err.message : 'Unable to copy CSV';
+    } finally {
+      exportLoading = false;
+    }
+  }
+
+  async function downloadHistoryScreenshot() {
+    exportMessage = null;
+    exportError = null;
+    exportLoading = true;
+    try {
+      const target = document.querySelector('.history-mmr');
+      if (!target) {
+        throw new Error('History card not found');
+      }
+      const canvas = await html2canvas(target as HTMLElement, { backgroundColor: null });
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `rocket-league-history-${new Date().toISOString()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      exportMessage = 'Screenshot downloaded';
+    } catch (err) {
+      exportError = err instanceof Error ? err.message : 'Unable to capture screenshot';
+    } finally {
+      exportLoading = false;
+    }
+  }
+
+  function buildChartMetrics(
+    records: MmrRecord[],
+    viewWidth: number,
+    viewHeight: number,
+    padding = CHART_PADDING
+  ) {
+    const points = records
+      .map((record) => ({
+        ...record,
+        timestampValue: new Date(record.timestamp).getTime(),
+      }))
+      .sort((a, b) => a.timestampValue - b.timestampValue);
+
+    if (!points.length) {
+      return {
+        points,
+        coordinates: [],
+        polyline: '',
+        minValue: 0,
+        maxValue: 0,
+        startLabel: '',
+        endLabel: '',
+      };
+    }
+
+    const minTime = points[0].timestampValue;
+    const maxTime = points[points.length - 1].timestampValue;
+    const minValue = Math.min(...points.map((point) => point.mmr));
+    const maxValue = Math.max(...points.map((point) => point.mmr));
+    const timeRange = maxTime === minTime ? 1 : maxTime - minTime;
+    const valueRange = maxValue === minValue ? 1 : maxValue - minValue;
+    const innerWidth = viewWidth - padding * 2;
+    const innerHeight = viewHeight - padding * 2;
+
+    const coordinates = points.map((point) => {
+      const x = padding + ((point.timestampValue - minTime) / timeRange) * innerWidth;
+      const y =
+        viewHeight -
+        padding -
+        ((point.mmr - minValue) / valueRange) * innerHeight;
+      return { x, y, mmr: point.mmr, timestamp: point.timestamp };
+    });
+
+    const polyline = coordinates.map((coord) => `${coord.x.toFixed(2)},${coord.y.toFixed(2)}`).join(' ');
+
+    return {
+      points,
+      coordinates,
+      polyline,
+      minValue,
+      maxValue,
+      startLabel: points[0].timestamp,
+      endLabel: points[points.length - 1].timestamp,
+    };
+  }
+
+  $: mmrChartMetrics = buildChartMetrics(mmrRecords, CHART_VIEW_WIDTH, CHART_VIEW_HEIGHT);
+  $: chartCoordinates = mmrChartMetrics.coordinates;
+  $: chartPolyline = mmrChartMetrics.polyline;
+  $: chartStartLabel = mmrChartMetrics.startLabel;
+  $: chartEndLabel = mmrChartMetrics.endLabel;
+  $: mmrChartMinValue = mmrChartMetrics.minValue;
+  $: mmrChartMaxValue = mmrChartMetrics.maxValue;
+  $: comparisonSeries = selectedPlaylists.map((playlist) => {
+    const seriesRecords = mmrSeriesByPlaylist[playlist] ?? [];
+    const metrics = buildChartMetrics(seriesRecords, COMPARISON_CHART_WIDTH, COMPARISON_CHART_HEIGHT, COMPARISON_PADDING);
+    const latestPoint = metrics.points[metrics.points.length - 1];
+    return {
+      playlist,
+      metrics,
+      latestPoint,
+    };
+  });
+  $: latestPluginRecord = Object.values(mmrSeriesByPlaylist)
+    .flat()
+    .reduce<MmrRecord | null>((latest, record) => {
+      if (!latest) {
+        return record;
+      }
+      return new Date(record.timestamp).getTime() > new Date(latest.timestamp).getTime() ? record : latest;
+    }, null);
+  $: dataStale = !latestPluginRecord ||
+    Date.now() - new Date(latestPluginRecord.timestamp).getTime() > STALE_THRESHOLD_MS;
+
   function totalDurationMinutes(session: Session) {
     const totalSeconds = session.blocks.reduce((sum, block) => sum + Math.max(0, block.actualDuration), 0);
     return Math.round(totalSeconds / 60);
@@ -276,34 +484,6 @@
     return block.skillIds.map((id) => skillMap[id] ?? `Skill #${id}`).join(', ');
   }
 
-  $: mmrChartPoints = mmrRecords
-    .map((record) => ({
-      ...record,
-      timestampValue: new Date(record.timestamp).getTime(),
-    }))
-    .sort((a, b) => a.timestampValue - b.timestampValue);
-
-  $: mmrChartMinTime = mmrChartPoints[0]?.timestampValue ?? 0;
-  $: mmrChartMaxTime = mmrChartPoints[mmrChartPoints.length - 1]?.timestampValue ?? 0;
-  $: mmrChartMinValue = mmrChartPoints.length
-    ? Math.min(...mmrChartPoints.map((point) => point.mmr))
-    : 0;
-  $: mmrChartMaxValue = mmrChartPoints.length
-    ? Math.max(...mmrChartPoints.map((point) => point.mmr))
-    : 0;
-  $: chartTimeRange = mmrChartMaxTime === mmrChartMinTime ? 1 : mmrChartMaxTime - mmrChartMinTime;
-  $: chartValueRange = mmrChartMaxValue === mmrChartMinValue ? 1 : mmrChartMaxValue - mmrChartMinValue;
-  $: chartCoordinates = mmrChartPoints.map((point) => {
-    const x = CHART_PADDING + ((point.timestampValue - mmrChartMinTime) / chartTimeRange) * CHART_INNER_WIDTH;
-    const y =
-      CHART_VIEW_HEIGHT -
-      CHART_PADDING -
-      ((point.mmr - mmrChartMinValue) / chartValueRange) * CHART_INNER_HEIGHT;
-    return { x, y, mmr: point.mmr, timestamp: point.timestamp };
-  });
-  $: chartPolyline = chartCoordinates.map((coord) => `${coord.x.toFixed(2)},${coord.y.toFixed(2)}`).join(' ');
-  $: chartStartLabel = chartCoordinates.length ? chartCoordinates[0].timestamp : '';
-  $: chartEndLabel = chartCoordinates.length ? chartCoordinates[chartCoordinates.length - 1].timestamp : '';
 </script>
 
 <section class="screen-content">
@@ -378,6 +558,24 @@
       </label>
     </div>
 
+    <div class="mmr-status">
+      <p>
+        Latest plugin submission:
+        {#if latestPluginRecord}
+          {formatDate(latestPluginRecord.timestamp)}
+        {:else}
+          — not yet received
+        {/if}
+      </p>
+      {#if latestPluginRecord}
+        <span class={`badge ${dataStale ? 'warning' : 'success'}`}>
+          {dataStale ? 'No logs in 48h' : 'Receiving plugin data'}
+        </span>
+      {:else}
+        <span class="badge offline">Awaiting plugin</span>
+      {/if}
+    </div>
+
     <form class="manual-mmr-form" on:submit|preventDefault={submitManualMmr}>
       <div class="manual-mmr-fields">
         {#if playlists.length}
@@ -430,6 +628,60 @@
         <p class="badge success manual-feedback">{manualSuccess}</p>
       {/if}
     </form>
+
+    <div class="history-export">
+      <button type="button" class="btn-tertiary" on:click={copyHistoryCsv} disabled={exportLoading}>
+        Copy history CSV
+      </button>
+      <button type="button" class="btn-tertiary" on:click={downloadHistoryScreenshot} disabled={exportLoading}>
+        Download screenshot
+      </button>
+      {#if exportMessage}
+        <p class="export-feedback success">{exportMessage}</p>
+      {/if}
+      {#if exportError}
+        <p class="export-feedback offline">{exportError}</p>
+      {/if}
+    </div>
+
+    {#if comparisonSeries.length}
+      <div class="playlist-comparison">
+        <h3>Playlist comparison</h3>
+        <div class="comparison-grid">
+          {#each comparisonSeries as series}
+            <div class="comparison-card">
+              <div class="comparison-card-header">
+                <strong>{series.playlist}</strong>
+                {#if series.latestPoint}
+                  <span class="comparison-latest">{series.latestPoint.mmr} MMR</span>
+                {/if}
+              </div>
+              {#if series.metrics.coordinates.length}
+                <svg
+                  viewBox={`0 0 ${COMPARISON_CHART_WIDTH} ${COMPARISON_CHART_HEIGHT}`}
+                  role="img"
+                  aria-label={`MMR small multiple for ${series.playlist}`}
+                  class="comparison-chart"
+                >
+                  <polyline class="mmr-chart-line" points={series.metrics.polyline} />
+                  {#each series.metrics.coordinates as coord}
+                    <circle class="mmr-chart-point" cx={coord.x} cy={coord.y} r="2.5" />
+                  {/each}
+                </svg>
+                <div class="comparison-meta">
+                  <span>{series.metrics.minValue} — {series.metrics.maxValue} MMR</span>
+                  <span>
+                    {formatChartDate(series.metrics.startLabel)} — {formatChartDate(series.metrics.endLabel)}
+                  </span>
+                </div>
+              {:else}
+                <p class="comparison-empty">No records in this range.</p>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
 
     {#if mmrLoading}
       <p>Loading MMR data…</p>
@@ -627,6 +879,37 @@
     cursor: not-allowed;
   }
 
+  .history-export {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+  }
+
+  .btn-tertiary {
+    border-radius: 8px;
+    padding: 0.45rem 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .btn-tertiary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .export-feedback {
+    margin: 0;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
   .manual-feedback {
     margin-top: 0.5rem;
     font-size: 0.85rem;
@@ -682,6 +965,87 @@
 
   .history-mmr-filters select {
     min-height: 96px;
+  }
+
+  .mmr-status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .mmr-status .badge {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.75rem;
+  }
+
+  .badge.warning {
+    background: #fff4d6;
+    border-color: rgba(15, 23, 42, 0.2);
+    color: #4d3b00;
+  }
+
+  .playlist-comparison {
+    margin-bottom: 1rem;
+  }
+
+  .playlist-comparison h3 {
+    margin: 0 0 0.35rem;
+    font-size: 0.85rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.65);
+  }
+
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .comparison-card {
+    background: rgba(15, 23, 42, 0.8);
+    border-radius: 12px;
+    padding: 0.85rem;
+    box-shadow: var(--history-card-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .comparison-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .comparison-latest {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .comparison-chart {
+    width: 100%;
+    height: auto;
+    margin-bottom: 0.35rem;
+  }
+
+  .comparison-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .comparison-empty {
+    margin: 0;
+    padding: 0.75rem 0;
+    font-size: 0.75rem;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.6);
   }
 
   .history-mmr h2 {
