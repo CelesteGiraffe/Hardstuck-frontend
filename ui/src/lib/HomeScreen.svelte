@@ -1,7 +1,7 @@
 <script lang="ts">
   import { healthCheck, createSession } from './api';
   import type { Preset, Skill, Session, SkillSummary, MmrRecord } from './api';
-  import { navigateTo, selectedPreset } from './stores';
+  import { launchPreset } from './stores';
   import { useSkills } from './useSkills';
   import {
     apiOfflineMessage,
@@ -200,8 +200,7 @@
   }
 
   function beginPreset(preset: Preset) {
-    selectedPreset.set(preset);
-    navigateTo('timer');
+    launchPreset(preset);
   }
 
   async function submitQuickTimer(event: Event) {

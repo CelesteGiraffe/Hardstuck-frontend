@@ -8,3 +8,12 @@ export function navigateTo(screenId: 'home' | 'presets' | 'timer' | 'history' | 
 }
 
 export const selectedPreset = writable<Preset | null>(null);
+
+export function launchPreset(preset: Preset) {
+  selectedPreset.set(preset);
+  navigateTo('timer');
+}
+
+export function clearSelectedPreset() {
+  selectedPreset.set(null);
+}

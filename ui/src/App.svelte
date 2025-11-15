@@ -7,7 +7,7 @@
 
   import { apiOfflineMessage } from './lib/queries';
   import OfflineBanner from './lib/components/OfflineBanner.svelte';
-  import { activeScreenId, navigateTo } from './lib/stores';
+  import { activeScreenId, navigateTo, clearSelectedPreset } from './lib/stores';
   import { setupChecklistState } from './lib/checklistState';
   import { pluginInstallUrl } from './lib/constants';
 
@@ -34,6 +34,9 @@
   $: activeScreenLabel = screens.find((screen) => screen.id === $activeScreenId)?.label ?? 'Home';
   $: checklistSnapshot = $setupChecklistState;
   $: checklistHasUpdates = checklistSnapshot.updatedAt > lastChecklistSeen;
+  $: if ($activeScreenId !== 'timer') {
+    clearSelectedPreset();
+  }
 </script>
 
 <div class="app-shell">

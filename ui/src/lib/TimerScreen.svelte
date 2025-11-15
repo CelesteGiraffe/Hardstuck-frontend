@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { selectedPreset } from './stores';
+  import { selectedPreset, clearSelectedPreset } from './stores';
   import { createSession } from './api';
   import { sessionsQuery, weeklySkillSummaryQuery } from './queries';
   import type { Preset, PresetBlock, SessionBlockPayload, SessionPayload } from './api';
@@ -344,8 +344,9 @@
     try {
   await createSession(createSessionPayload());
   saveSuccess = 'Session saved!';
-      await Promise.all([sessionsQuery.refresh(), weeklySkillSummaryQuery.refresh()]);
-      resetTimerState();
+  await Promise.all([sessionsQuery.refresh(), weeklySkillSummaryQuery.refresh()]);
+  resetTimerState();
+  clearSelectedPreset();
     } catch (error) {
       saveError = error instanceof Error ? error.message : 'Unable to save session';
     } finally {

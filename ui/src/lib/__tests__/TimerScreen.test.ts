@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import type { Preset, Session, SkillSummary } from '../api';
+import { get } from 'svelte/store';
 import { selectedPreset } from '../stores';
 import { sessionsQuery, weeklySkillSummaryQuery } from '../queries';
 
@@ -119,6 +120,7 @@ test('shows save CTA when session completes and refreshes on successful save', a
   await waitFor(() => expect(createSessionMock).toHaveBeenCalled());
   await waitFor(() => expect(sessionsRefreshMock).toHaveBeenCalled());
   expect(weeklySummaryRefreshMock).toHaveBeenCalled();
+  await waitFor(() => expect(get(selectedPreset)).toBeNull());
   await waitFor(() => {
     expect(queryByRole('button', { name: 'Save session' })).not.toBeInTheDocument();
   });

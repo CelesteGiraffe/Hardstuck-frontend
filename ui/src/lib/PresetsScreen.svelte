@@ -4,6 +4,7 @@
   import { getPresets, deletePreset } from './api';
   import type { Preset } from './api';
   import { useSkills } from './useSkills';
+  import { launchPreset } from './stores';
 
   let presets: Preset[] = [];
   let loading = false;
@@ -115,6 +116,12 @@
       deleting = false;
     }
   }
+
+  function runPreset() {
+    if (!selectedPreset) return;
+    detailMessage = null;
+    launchPreset(selectedPreset);
+  }
 </script>
 
 <section class="screen-content presets-shell">
@@ -186,6 +193,13 @@
           {#if selectedPreset}
             <div class="detail-actions">
               <button type="button" class="button-soft" on:click={openEditingPreset}>Edit</button>
+              <button
+                type="button"
+                class="button-neon"
+                on:click={runPreset}
+              >
+                Run preset
+              </button>
               <button type="button" class="btn-primary" on:click={handleDelete} disabled={deleting}>
                 {#if deleting}Deleting…{:else}Delete preset{/if}
               </button>
