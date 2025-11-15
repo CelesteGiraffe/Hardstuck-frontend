@@ -8,6 +8,8 @@
     getMmrRecords,
     createSession,
   } from './api';
+  import { readCache, writeCache } from './homeCache';
+  import type { DashboardCacheKey } from './homeCache';
   import type { Preset, Skill, Session, SkillSummary, MmrRecord } from './api';
   import { navigateTo, selectedPreset } from './stores';
   import { useSkills } from './useSkills';
@@ -46,20 +48,88 @@
 
   let latestMmr: MmrRecord[] = [];
   let mmrError: string | null = null;
+  let mmrRecords: MmrRecord[] = [];
+  let lastMmrRecord: MmrRecord | null = null;
+  let lastMmrMeta: string | null = null;
+  let healthError: string | null = null;
+  let healthChecking = false;
+  const pluginInstallUrl = 'https://github.com/CelesteGiraffe/RL-Trainer-2#3-bakkesmod-plugin-c';
+  type ChecklistItem = {
+    label: string;
+    ready: boolean;
+    value: string;
+    helper: string;
+  };
+  let cacheTimestamps: Record<DashboardCacheKey, string | null> = {
+    presets: null,
+    skillSummary: null,
+    minutesToday: null,
+    latestMmr: null,
+  };
+  let cacheNote = 'Fetching fresh stats…';
+
+  $: checklistItems = [
+    {
+      label: 'Skills tracked',
+      ready: skillList.length > 0,
+      value: `${skillList.length}`,
+      helper: skillList.length
+        ? 'Connect skills to your quick timer or presets'
+        : 'Create a skill to start your training log',
+    },
+    {
+      label: 'Presets ready',
+      ready: presets.length > 0,
+      value: `${presets.length}`,
+      helper: presets.length
+        ? `${presets.length} preset${presets.length === 1 ? '' : 's'} are waiting`
+        : 'Build a preset from the Presets screen',
+    },
+    {
+      label: 'MMR logs',
+      ready: Boolean(lastMmrRecord),
+      value: `${mmrRecords.length}`,
+      helper: lastMmrRecord
+        ? `Latest via ${describeMmrSource(lastMmrRecord.source)}`
+        : 'Log a match manually or enable the plugin',
+    },
+  ];
+
+  $: lastMmrMeta = lastMmrRecord
+    ? `${formatTimestamp(lastMmrRecord.timestamp)} · ${describeMmrSource(lastMmrRecord.source)}`
+    : null;
+
+  $: cacheNote = cacheTimestamps.latestMmr
+    ? `Last cached: ${formatTimestamp(cacheTimestamps.latestMmr)}`
+    : 'Fetching fresh stats…';
 
   onMount(async () => {
-    apiHealthy = await healthCheck();
-    await loadPresets();
     skillsStore.ensureLoaded();
-    await Promise.all([loadSessions(), loadSkillSummary(), loadLatestMmr()]);
+    await Promise.all([
+      refreshHealthStatus(),
+      loadPresets(),
+      loadSessions(),
+      loadSkillSummary(),
+      loadLatestMmr(),
+    ]);
   });
 
   async function loadPresets() {
     loadingPresets = true;
     presetError = null;
+    const cacheKey: DashboardCacheKey = 'presets';
+
+    const cached = readCache<Preset[]>(cacheKey);
+    if (cached) {
+      presets = cached.data;
+      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: cached.timestamp };
+    }
 
     try {
-      presets = await getPresets();
+      const fresh = await getPresets();
+      presets = fresh;
+      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: new Date().toISOString() };
+      writeCache(cacheKey, fresh);
     } catch (error) {
       console.error('Failed to load presets', error);
       presetError = 'Unable to load presets';
@@ -71,6 +141,12 @@
   async function loadSessions() {
     loadingSessions = true;
     sessionError = null;
+    const cacheKey: DashboardCacheKey = 'minutesToday';
+    const cached = readCache<number>(cacheKey);
+    if (cached) {
+      totalMinutesToday = cached.data;
+      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: cached.timestamp };
+    }
 
     try {
       sessions = await getSessions();
@@ -92,6 +168,8 @@
       }, 0);
 
       totalMinutesToday = Math.round(totalSeconds / 60);
+      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: new Date().toISOString() };
+      writeCache(cacheKey, totalMinutesToday);
     } catch (error) {
       console.error('Failed to load sessions', error);
       sessionError = 'Unable to load sessions';
@@ -102,14 +180,23 @@
 
   async function loadSkillSummary() {
     summaryError = null;
-
+    const cacheKey: DashboardCacheKey = 'skillSummary';
     const to = new Date();
     const from = new Date(to);
     from.setDate(to.getDate() - 7);
 
+    const cached = readCache<SkillSummary[]>(cacheKey);
+    if (cached) {
+      skillSummary = cached.data;
+      topSkills = skillSummary.slice(0, 3);
+      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: cached.timestamp };
+    }
+
     try {
       skillSummary = await getSkillSummary({ from: from.toISOString(), to: to.toISOString() });
       topSkills = skillSummary.slice(0, 3);
+      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: new Date().toISOString() };
+      writeCache(cacheKey, skillSummary);
     } catch (error) {
       console.error('Failed to load weekly summary', error);
       summaryError = 'Unable to load weekly summary';
@@ -118,23 +205,68 @@
 
   async function loadLatestMmr() {
     mmrError = null;
+    const cacheKey: DashboardCacheKey = 'latestMmr';
+    const cached = readCache<MmrRecord[]>(cacheKey);
+    if (cached) {
+      applyMmrRecords(cached.data);
+      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: cached.timestamp };
+    }
 
     try {
       const records = await getMmrRecords();
-      const latest = new Map<string, MmrRecord>();
-
-      for (const record of records) {
-        const current = latest.get(record.playlist);
-        if (!current || new Date(record.timestamp).getTime() > new Date(current.timestamp).getTime()) {
-          latest.set(record.playlist, record);
-        }
-      }
-
-      latestMmr = Array.from(latest.values()).sort((a, b) => a.playlist.localeCompare(b.playlist));
+      applyMmrRecords(records);
+      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: new Date().toISOString() };
+      writeCache(cacheKey, records);
     } catch (error) {
       console.error('Failed to load MMR records', error);
       mmrError = 'Unable to load MMR data';
     }
+  }
+
+  function applyMmrRecords(records: MmrRecord[] = []) {
+    mmrRecords = records;
+    const latest = new Map<string, MmrRecord>();
+    for (const record of mmrRecords) {
+      const current = latest.get(record.playlist);
+      if (!current || new Date(record.timestamp).getTime() > new Date(current.timestamp).getTime()) {
+        latest.set(record.playlist, record);
+      }
+    }
+
+    latestMmr = Array.from(latest.values()).sort((a, b) => a.playlist.localeCompare(b.playlist));
+    const chronologically = [...mmrRecords].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    lastMmrRecord = chronologically[chronologically.length - 1] ?? null;
+  }
+
+  async function refreshHealthStatus() {
+    healthChecking = true;
+    try {
+      const healthy = await healthCheck();
+      apiHealthy = healthy;
+      healthError = healthy ? null : 'API reported unhealthy';
+    } catch (error) {
+      apiHealthy = false;
+      healthError = error instanceof Error ? error.message : 'Unable to reach API';
+    } finally {
+      healthChecking = false;
+    }
+  }
+
+  function describeMmrSource(source: string | null | undefined) {
+    if (!source) {
+      return 'Unknown source';
+    }
+    if (source.toLowerCase() === 'manual') {
+      return 'Manual entry';
+    }
+    return `Plugin (${source})`;
+  }
+
+  function formatTimestamp(value?: string | null) {
+    if (!value) {
+      return 'n/a';
+    }
+    return new Date(value).toLocaleString();
   }
 
   function beginPreset(preset: Preset) {
@@ -210,6 +342,19 @@
           offline
         {/if}
       </div>
+      <div class="hero-health">
+        {#if healthError}
+          <p class="form-error hero-health-error">{healthError}</p>
+        {/if}
+        <button
+          type="button"
+          class="button-neon hero-health-button"
+          on:click={refreshHealthStatus}
+          disabled={healthChecking}
+        >
+          {healthChecking ? 'Checking…' : 'Retry API health'}
+        </button>
+      </div>
       <span class="hero-chip">Boost ready · presets synced</span>
     </div>
   </div>
@@ -260,6 +405,37 @@
           {/each}
         </ul>
       {/if}
+    </article>
+    <article class="dashboard-card checklist-card">
+      <div class="checklist-header">
+        <h3>Setup checklist</h3>
+        <p>See what’s left before your training stack is complete.</p>
+      </div>
+      <ul class="checklist-list">
+        {#each checklistItems as item}
+          <li class:item-ready={item.ready} class:item-missing={!item.ready}>
+            <div>
+              <span>{item.label}</span>
+              <small>{item.helper}</small>
+            </div>
+            <strong>{item.value}</strong>
+          </li>
+        {/each}
+      </ul>
+      <p class="checklist-last">
+        <span>Last MMR log:</span>
+        {#if lastMmrMeta}
+          <strong>{lastMmrMeta}</strong>
+        {:else}
+          <strong>Not recorded yet</strong>
+        {/if}
+      </p>
+      <p class="checklist-cache">{cacheNote}</p>
+      <div class="checklist-actions">
+        <a class="button-link" href={pluginInstallUrl} target="_blank" rel="noreferrer">
+          Plugin installation guide
+        </a>
+      </div>
     </article>
   </div>
 
@@ -389,5 +565,101 @@
 
   .preset-area > p {
     margin-top: 0.75rem;
+  }
+
+  .hero-health {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .hero-health-error {
+    margin: 0;
+    font-size: 0.85rem;
+  }
+
+  .hero-health-button {
+    font-size: 0.8rem;
+    padding: 0.35rem 0.85rem;
+  }
+
+  .checklist-card {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(15, 23, 42, 0.9));
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .checklist-header p {
+    margin: 0.25rem 0 0;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+
+  .checklist-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .checklist-list li {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 0.6rem;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .checklist-list li:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .checklist-list small {
+    display: block;
+    margin-top: 0.3rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .checklist-list strong {
+    font-size: 1.1rem;
+  }
+
+  .checklist-list li.item-ready strong {
+    color: var(--accent-strong);
+  }
+
+  .checklist-list li.item-missing strong {
+    color: rgba(248, 113, 113, 0.9);
+  }
+
+  .checklist-last {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .checklist-cache {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
+  .checklist-actions {
+    margin-top: 0.35rem;
+  }
+
+  .button-link {
+    color: #fff;
+    text-decoration: underline;
+    font-weight: 600;
   }
 </style>

@@ -95,13 +95,11 @@ function buildUrl(path: string) {
 }
 
 export async function healthCheck(): Promise<boolean> {
-  try {
-    const response = await fetch(buildUrl('/api/health'));
-    return response.ok;
-  } catch (error) {
-    console.error('Health check failed', error);
-    return false;
+  const response = await fetch(buildUrl('/api/health'));
+  if (!response.ok) {
+    throw new Error('Health check failed');
   }
+  return true;
 }
 
 export async function getMmrRecords(filters: { playlist?: string; from?: string; to?: string } = {}): Promise<MmrRecord[]> {

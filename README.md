@@ -157,6 +157,9 @@ The UI dev server already proxies `/api` to `http://localhost:4000`, so API call
 3. **Track performance**
   - Let the BakkesMod plugin POST to `/api/mmr-log` after matches, or use the manual form on the History screen.
   - Visit the History screen to view skill summaries and playlist-specific MMR trends.
+  - The home dashboard caches presets, minutes, skill summaries, and MMR records so you see the last-known stats immediately while the UI revalidates in the background.
+  - Check the setup checklist card on the home screen to confirm you have skills, presets, and recent MMR logs, and use the plugin installation link when logging is missing.
+  - API health errors are surfaced right in the hero banner with a retry button so you can reconnect the local server without hunting through the console.
 
 4. **Verify everything**
   - Run `npm test` from the repo root to execute the API Jest suite and the UI `svelte-check`/TypeScript checks at once.
