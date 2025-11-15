@@ -45,6 +45,9 @@ const config = {
     environment: 'happy-dom',
     include: ['src/**/*.{test,spec}.{js,ts}'],
     setupFiles: 'src/setupTests.ts',
+    env: {
+      VITE_API_BASE: 'http://localhost',
+    },
   },
 } as UserConfig & VitestUserConfig
 

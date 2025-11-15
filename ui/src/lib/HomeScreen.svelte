@@ -1,41 +1,34 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import {
-    healthCheck,
-    getPresets,
-    getSessions,
-    getSkillSummary,
-    getMmrRecords,
-    createSession,
-  } from './api';
-  import { readCache, writeCache } from './homeCache';
-  import type { DashboardCacheKey } from './homeCache';
+  import { healthCheck, createSession } from './api';
   import type { Preset, Skill, Session, SkillSummary, MmrRecord } from './api';
   import { navigateTo, selectedPreset } from './stores';
   import { useSkills } from './useSkills';
+  import {
+    apiOfflineMessage,
+    isApiOffline,
+    mmrLogQuery,
+    presetsQuery,
+    sessionsQuery,
+    weeklySkillSummaryQuery,
+  } from './queries';
 
   let apiHealthy: boolean | null = null;
-
-  let presets: Preset[] = [];
-  let loadingPresets = false;
-  let presetError: string | null = null;
+  let healthChecking = false;
+  let healthError: string | null = null;
 
   const skillsStore = useSkills();
   let skillList: Skill[] = [];
   let skillsLoading = false;
   let skillsError: string | null = null;
   let quickSkillId: number | null = null;
-
-  $: skillList = $skillsStore.skills;
-  $: skillsLoading = $skillsStore.loading;
-  $: skillsError = $skillsStore.error;
-  $: if (quickSkillId === null && skillList.length) {
-    quickSkillId = skillList[0].id;
-  }
   let quickMinutes = '10';
   let quickSubmitting = false;
   let quickSuccess: string | null = null;
   let quickError: string | null = null;
+
+  let presets: Preset[] = [];
+  let loadingPresets = false;
+  let presetError: string | null = null;
 
   let sessions: Session[] = [];
   let loadingSessions = false;
@@ -48,11 +41,10 @@
 
   let latestMmr: MmrRecord[] = [];
   let mmrError: string | null = null;
-  let mmrRecords: MmrRecord[] = [];
   let lastMmrRecord: MmrRecord | null = null;
   let lastMmrMeta: string | null = null;
-  let healthError: string | null = null;
-  let healthChecking = false;
+  let cacheNote = 'Fetching fresh stats…';
+
   const pluginInstallUrl = 'https://github.com/CelesteGiraffe/RL-Trainer-2#3-bakkesmod-plugin-c';
   type ChecklistItem = {
     label: string;
@@ -60,13 +52,62 @@
     value: string;
     helper: string;
   };
-  let cacheTimestamps: Record<DashboardCacheKey, string | null> = {
-    presets: null,
-    skillSummary: null,
-    minutesToday: null,
-    latestMmr: null,
-  };
-  let cacheNote = 'Fetching fresh stats…';
+
+  $: skillList = $skillsStore.skills;
+  $: skillsLoading = $skillsStore.loading;
+  $: skillsError = $skillsStore.error;
+  $: if (quickSkillId === null && skillList.length) {
+    quickSkillId = skillList[0].id;
+  }
+
+  $: {
+    const state = $presetsQuery;
+    presets = state.data;
+    loadingPresets = state.loading;
+    presetError = state.error;
+  }
+
+  $: {
+    const state = $sessionsQuery;
+    sessions = state.data;
+    loadingSessions = state.loading;
+    sessionError = state.error;
+    totalMinutesToday = calculateMinutesToday(sessions);
+  }
+
+  $: {
+    const state = $weeklySkillSummaryQuery;
+    skillSummary = state.data;
+    summaryError = state.error;
+    topSkills = skillSummary.slice(0, 3);
+  }
+
+  $: {
+    const state = $mmrLogQuery;
+    mmrError = state.error;
+    const records = state.data;
+    const latest = new Map<string, MmrRecord>();
+    for (const record of records) {
+      const current = latest.get(record.playlist);
+      if (!current || new Date(record.timestamp).getTime() > new Date(current.timestamp).getTime()) {
+        latest.set(record.playlist, record);
+      }
+    }
+
+    latestMmr = Array.from(latest.values()).sort((a, b) => a.playlist.localeCompare(b.playlist));
+    const chronologically = [...records].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    lastMmrRecord = chronologically[chronologically.length - 1] ?? null;
+  }
+
+  $: lastMmrMeta = lastMmrRecord
+    ? `${formatTimestamp(lastMmrRecord.timestamp)} · ${describeMmrSource(lastMmrRecord.source)}`
+    : null;
+
+  $: cacheNote = $mmrLogQuery.lastUpdated
+    ? `Last synced: ${formatTimestamp($mmrLogQuery.lastUpdated)}`
+    : 'Fetching fresh stats…';
 
   $: checklistItems = [
     {
@@ -88,168 +129,32 @@
     {
       label: 'MMR logs',
       ready: Boolean(lastMmrRecord),
-      value: `${mmrRecords.length}`,
+      value: `${latestMmr.length}`,
       helper: lastMmrRecord
         ? `Latest via ${describeMmrSource(lastMmrRecord.source)}`
         : 'Log a match manually or enable the plugin',
     },
   ];
 
-  $: lastMmrMeta = lastMmrRecord
-    ? `${formatTimestamp(lastMmrRecord.timestamp)} · ${describeMmrSource(lastMmrRecord.source)}`
-    : null;
+  function calculateMinutesToday(currentSessions: Session[]) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setHours(23, 59, 59, 999);
 
-  $: cacheNote = cacheTimestamps.latestMmr
-    ? `Last cached: ${formatTimestamp(cacheTimestamps.latestMmr)}`
-    : 'Fetching fresh stats…';
-
-  onMount(async () => {
-    skillsStore.ensureLoaded();
-    await Promise.all([
-      refreshHealthStatus(),
-      loadPresets(),
-      loadSessions(),
-      loadSkillSummary(),
-      loadLatestMmr(),
-    ]);
-  });
-
-  async function loadPresets() {
-    loadingPresets = true;
-    presetError = null;
-    const cacheKey: DashboardCacheKey = 'presets';
-
-    const cached = readCache<Preset[]>(cacheKey);
-    if (cached) {
-      presets = cached.data;
-      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: cached.timestamp };
-    }
-
-    try {
-      const fresh = await getPresets();
-      presets = fresh;
-      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: new Date().toISOString() };
-      writeCache(cacheKey, fresh);
-    } catch (error) {
-      console.error('Failed to load presets', error);
-      presetError = 'Unable to load presets';
-    } finally {
-      loadingPresets = false;
-    }
-  }
-
-  async function loadSessions() {
-    loadingSessions = true;
-    sessionError = null;
-    const cacheKey: DashboardCacheKey = 'minutesToday';
-    const cached = readCache<number>(cacheKey);
-    if (cached) {
-      totalMinutesToday = cached.data;
-      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: cached.timestamp };
-    }
-
-    try {
-      sessions = await getSessions();
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      const todayEnd = new Date(todayStart);
-      todayEnd.setHours(23, 59, 59, 999);
-
-      const totalSeconds = sessions.reduce((sum, session) => {
-        const started = new Date(session.startedTime);
-        if (started >= todayStart && started <= todayEnd) {
-          const blocksSeconds = session.blocks.reduce(
-            (blockSum, block) => blockSum + Math.max(0, block.actualDuration),
-            0
-          );
-          return sum + blocksSeconds;
-        }
-        return sum;
-      }, 0);
-
-      totalMinutesToday = Math.round(totalSeconds / 60);
-      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: new Date().toISOString() };
-      writeCache(cacheKey, totalMinutesToday);
-    } catch (error) {
-      console.error('Failed to load sessions', error);
-      sessionError = 'Unable to load sessions';
-    } finally {
-      loadingSessions = false;
-    }
-  }
-
-  async function loadSkillSummary() {
-    summaryError = null;
-    const cacheKey: DashboardCacheKey = 'skillSummary';
-    const to = new Date();
-    const from = new Date(to);
-    from.setDate(to.getDate() - 7);
-
-    const cached = readCache<SkillSummary[]>(cacheKey);
-    if (cached) {
-      skillSummary = cached.data;
-      topSkills = skillSummary.slice(0, 3);
-      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: cached.timestamp };
-    }
-
-    try {
-      skillSummary = await getSkillSummary({ from: from.toISOString(), to: to.toISOString() });
-      topSkills = skillSummary.slice(0, 3);
-      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: new Date().toISOString() };
-      writeCache(cacheKey, skillSummary);
-    } catch (error) {
-      console.error('Failed to load weekly summary', error);
-      summaryError = 'Unable to load weekly summary';
-    }
-  }
-
-  async function loadLatestMmr() {
-    mmrError = null;
-    const cacheKey: DashboardCacheKey = 'latestMmr';
-    const cached = readCache<MmrRecord[]>(cacheKey);
-    if (cached) {
-      applyMmrRecords(cached.data);
-      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: cached.timestamp };
-    }
-
-    try {
-      const records = await getMmrRecords();
-      applyMmrRecords(records);
-      cacheTimestamps = { ...cacheTimestamps, [cacheKey]: new Date().toISOString() };
-      writeCache(cacheKey, records);
-    } catch (error) {
-      console.error('Failed to load MMR records', error);
-      mmrError = 'Unable to load MMR data';
-    }
-  }
-
-  function applyMmrRecords(records: MmrRecord[] = []) {
-    mmrRecords = records;
-    const latest = new Map<string, MmrRecord>();
-    for (const record of mmrRecords) {
-      const current = latest.get(record.playlist);
-      if (!current || new Date(record.timestamp).getTime() > new Date(current.timestamp).getTime()) {
-        latest.set(record.playlist, record);
+    const totalSeconds = currentSessions.reduce((sum, session) => {
+      const started = new Date(session.startedTime);
+      if (started >= todayStart && started <= todayEnd) {
+        const blocksSeconds = session.blocks.reduce(
+          (blockSum, block) => blockSum + Math.max(0, block.actualDuration),
+          0
+        );
+        return sum + blocksSeconds;
       }
-    }
+      return sum;
+    }, 0);
 
-    latestMmr = Array.from(latest.values()).sort((a, b) => a.playlist.localeCompare(b.playlist));
-    const chronologically = [...mmrRecords].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-    lastMmrRecord = chronologically[chronologically.length - 1] ?? null;
-  }
-
-  async function refreshHealthStatus() {
-    healthChecking = true;
-    try {
-      const healthy = await healthCheck();
-      apiHealthy = healthy;
-      healthError = healthy ? null : 'API reported unhealthy';
-    } catch (error) {
-      apiHealthy = false;
-      healthError = error instanceof Error ? error.message : 'Unable to reach API';
-    } finally {
-      healthChecking = false;
-    }
+    return Math.round(totalSeconds / 60);
   }
 
   function describeMmrSource(source: string | null | undefined) {
@@ -308,15 +213,29 @@
         ],
       });
 
-  const skillName = skillList.find((skill) => skill.id === quickSkillId)?.name ?? 'skill';
+      const skillName = skillList.find((skill) => skill.id === quickSkillId)?.name ?? 'skill';
       quickSuccess = `Logged ${minutes} min for ${skillName}`;
       quickMinutes = '10';
 
-      await Promise.all([loadSessions(), loadSkillSummary()]);
+      await Promise.all([sessionsQuery.refresh(), weeklySkillSummaryQuery.refresh()]);
     } catch (error) {
       quickError = error instanceof Error ? error.message : 'Unable to log quick block';
     } finally {
       quickSubmitting = false;
+    }
+  }
+
+  async function refreshHealthStatus() {
+    healthChecking = true;
+    try {
+      const healthy = await healthCheck();
+      apiHealthy = healthy;
+      healthError = healthy ? null : 'API reported unhealthy';
+    } catch (error) {
+      apiHealthy = false;
+      healthError = error instanceof Error ? error.message : 'Unable to reach API';
+    } finally {
+      healthChecking = false;
     }
   }
 </script>
@@ -334,17 +253,17 @@
     <div class="home-hero-meta">
       <div class="status-badge">
         API status:
-        {#if apiHealthy === null}
-          checking...
-        {:else if apiHealthy}
-          online
-        {:else}
+        {#if $isApiOffline}
           offline
+        {:else if apiHealthy === null}
+          checking...
+        {:else}
+          online
         {/if}
       </div>
       <div class="hero-health">
-        {#if healthError}
-          <p class="form-error hero-health-error">{healthError}</p>
+        {#if healthError || $apiOfflineMessage}
+          <p class="form-error hero-health-error">{healthError ?? $apiOfflineMessage}</p>
         {/if}
         <button
           type="button"

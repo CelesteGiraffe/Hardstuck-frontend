@@ -202,7 +202,6 @@
   }
 
   onMount(() => {
-    skillsStore.ensureLoaded();
     loadPreferences();
   });
 

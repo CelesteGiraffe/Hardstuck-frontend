@@ -45,3 +45,39 @@ If you have state that's important to retain within a component, consider creati
 import { writable } from 'svelte/store'
 export default writable(0)
 ```
+
+## UI data layer (`src/lib/queries`)
+
+The UI now centralizes API access through the `src/lib/queries` exports. Each resource store exposes a consistent `ResourceState<T>` (`data`, `loading`, `error`, `lastUpdated`, plus `refresh` / `reset` helpers) and automatically revalidates on a short interval.
+
+- `createResourceStore` powers every store, handling concurrency, error messages, and background refreshes.
+- Prebuilt stores include `skillsQuery`, `presetsQuery`, `sessionsQuery`, `mmrLogQuery`, and `weeklySkillSummaryQuery`. Import them directly inside components to read `data` via `$store` and call `store.refresh()` when your filters change.
+- A shared `apiOfflineMessage` / `isApiOffline` derived store surfaces the first active error message so the UI can show consistent alerts whenever the API appears offline.
+
+Example:
+
+```svelte
+<script lang="ts">
+	import { sessionsQuery } from './lib/queries';
+
+	function reloadRange(start?: string, end?: string) {
+		void sessionsQuery.refresh({ start, end });
+	}
+
+	$: { data, loading, error } = $sessionsQuery;
+</script>
+
+{#if loading}
+	<p>Loading sessions…</p>
+{:else if error}
+	<p class="badge offline">{error}</p>
+{:else}
+	<ul>
+		{#each data as session}
+			<li>{session.startedTime}</li>
+		{/each}
+	</ul>
+{/if}
+```
+
+This pattern keeps UI components focused on presentation while the shared stores keep data fresh, surface errors, and simplify the unit tests.

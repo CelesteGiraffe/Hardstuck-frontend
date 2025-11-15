@@ -18,7 +18,7 @@ describe('SkillsScreen', () => {
   it('updates a skill and refreshes the shared store', async () => {
     vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
   const updateSpy = vi.spyOn(api, 'updateSkill').mockResolvedValue(skills[0])
-  const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockImplementation(() => Promise.resolve())
+  const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockResolvedValue(skills)
 
   const { getAllByLabelText, findByRole, container } = render(SkillsScreen)
 
@@ -38,7 +38,7 @@ describe('SkillsScreen', () => {
   it('deletes a skill when confirmed', async () => {
     vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
     const deleteSpy = vi.spyOn(api, 'deleteSkill').mockResolvedValue(undefined)
-    const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockImplementation(() => Promise.resolve())
+    const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockResolvedValue(skills)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
   const { getAllByLabelText } = render(SkillsScreen)

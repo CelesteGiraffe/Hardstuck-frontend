@@ -1,27 +1,45 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import {
-    getSessions,
-    getPresets,
-    getSkillSummary,
-    getMmrRecords,
-    createMmrLog,
-  } from './api';
+  import { createMmrLog } from './api';
   import type { Session, SessionBlock, SkillSummary, MmrRecord } from './api';
   import { useSkills } from './useSkills';
   import html2canvas from 'html2canvas';
+  import {
+    mmrLogQuery,
+    presetsQuery,
+    sessionsQuery,
+    weeklySkillSummaryQuery,
+  } from './queries';
 
   let sessions: Session[] = [];
   let selectedSession: Session | null = null;
-  let loading = true;
-  let error: string | null = null;
+  let loadingSessions = true;
+  let sessionError: string | null = null;
   let skillMap: Record<number, string> = {};
   let presetMap: Record<number, string> = {};
   const skillsStore = useSkills();
   $: skillMap = Object.fromEntries($skillsStore.skills.map((skill) => [skill.id, skill.name]));
+  $: presetMap = Object.fromEntries($presetsQuery.data.map((preset) => [preset.id, preset.name]));
+
+  $: {
+    const state = $sessionsQuery;
+    sessions = state.data
+      .slice()
+      .sort((a, b) => new Date(b.startedTime).getTime() - new Date(a.startedTime).getTime());
+    loadingSessions = state.loading;
+    sessionError = state.error;
+  }
+
   let summary: SkillSummary[] = [];
   let summaryLoading = true;
   let summaryError: string | null = null;
+
+  $: {
+    const state = $weeklySkillSummaryQuery;
+    summary = state.data;
+    summaryLoading = state.loading;
+    summaryError = state.error;
+  }
 
   const MMR_WINDOW_DAYS = 30;
   const CHART_VIEW_WIDTH = 640;
@@ -89,101 +107,65 @@
   let exportError: string | null = null;
   let exportLoading = false;
 
+  function arraysEqual(a: string[], b: string[]) {
+    if (a.length !== b.length) {
+      return false;
+    }
+    return a.every((value, index) => b[index] === value);
+  }
+
+  $: {
+    const state = $mmrLogQuery;
+    mmrLoading = state.loading;
+    mmrError = state.error;
+    const records = state.data;
+    const uniquePlaylists = Array.from(new Set(records.map((record) => record.playlist))).sort();
+
+    if (!arraysEqual(playlists, uniquePlaylists)) {
+      playlists = uniquePlaylists;
+    }
+
+    if (!selectedPlaylists.length && uniquePlaylists.length) {
+      selectedPlaylists = [...uniquePlaylists];
+    } else if (selectedPlaylists.length) {
+      const preserved = selectedPlaylists.filter((playlist) => uniquePlaylists.includes(playlist));
+      if (!arraysEqual(preserved, selectedPlaylists)) {
+        selectedPlaylists = preserved.length ? preserved : [...uniquePlaylists];
+      }
+    }
+
+    if (!selectedPlaylist || !uniquePlaylists.includes(selectedPlaylist)) {
+      selectedPlaylist = uniquePlaylists.length ? uniquePlaylists[0] : null;
+    }
+
+    const grouped: Record<string, MmrRecord[]> = {};
+    for (const record of records) {
+      if (selectedPlaylists.length && !selectedPlaylists.includes(record.playlist)) {
+        continue;
+      }
+      grouped[record.playlist] = grouped[record.playlist] ?? [];
+      grouped[record.playlist].push(record);
+    }
+
+    for (const playlist of Object.keys(grouped)) {
+      grouped[playlist].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    }
+
+    mmrSeriesByPlaylist = grouped;
+    mmrRecords = selectedPlaylist ? grouped[selectedPlaylist] ?? [] : [];
+  }
+
   onMount(() => {
-    loadSummary();
     void refreshHistoryData();
   });
 
-  async function loadSessions() {
-    loading = true;
-    error = null;
-
-    try {
-      const [sessionData, presets] = await Promise.all([getSessions(buildSessionFilters()), getPresets()]);
-      sessions = sessionData.sort((a, b) => new Date(b.startedTime).getTime() - new Date(a.startedTime).getTime());
-      presetMap = Object.fromEntries(presets.map((preset) => [preset.id, preset.name]));
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Unable to load sessions';
-    } finally {
-      loading = false;
-    }
-  }
-
-  async function loadSummary() {
-    summaryLoading = true;
-    summaryError = null;
-    const to = new Date();
-    const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-    try {
-      summary = await getSkillSummary({ from: from.toISOString(), to: to.toISOString() });
-    } catch (err) {
-      summaryError = err instanceof Error ? err.message : 'Unable to load summary';
-    } finally {
-      summaryLoading = false;
-    }
-  }
-
   async function refreshHistoryData() {
-    await loadSessions();
-    await loadMmrPlaylists();
-    await loadMmrSeries();
-  }
-
-  async function loadMmrPlaylists() {
-    mmrError = null;
-
-    try {
-      const records = await getMmrRecords(buildMmrFilters());
-      const uniquePlaylists = Array.from(new Set(records.map((record) => record.playlist))).sort();
-      playlists = uniquePlaylists;
-      const preservedSelection = selectedPlaylists.filter((playlist) => playlists.includes(playlist));
-      selectedPlaylists = preservedSelection.length ? preservedSelection : [...playlists];
-      if (!selectedPlaylist || !playlists.includes(selectedPlaylist)) {
-        selectedPlaylist = playlists.length ? playlists[0] : null;
-      }
-    } catch (err) {
-      mmrError = err instanceof Error ? err.message : 'Unable to load playlist data';
-      mmrLoading = false;
-    }
-  }
-
-  async function loadMmrSeries() {
-    if (!selectedPlaylists.length) {
-      mmrRecords = [];
-      mmrSeriesByPlaylist = {};
-      mmrLoading = false;
-      return;
-    }
-
-    mmrLoading = true;
-    mmrError = null;
-    const filters = buildMmrFilters();
-
-    try {
-      const requests = selectedPlaylists.map((playlist) =>
-        getMmrRecords({ playlist, from: filters.from, to: filters.to })
-      );
-      const responses = await Promise.all(requests);
-      const series: Record<string, MmrRecord[]> = {};
-      responses.forEach((records, index) => {
-        series[selectedPlaylists[index]] = records;
-      });
-      mmrSeriesByPlaylist = series;
-      const displayPlaylist =
-        selectedPlaylists.find((playlist) => playlist === selectedPlaylist) ?? selectedPlaylists[0];
-      if (displayPlaylist) {
-        selectedPlaylist = displayPlaylist;
-        mmrRecords = mmrSeriesByPlaylist[displayPlaylist] ?? [];
-      } else {
-        mmrRecords = [];
-        selectedPlaylist = null;
-      }
-    } catch (err) {
-      mmrError = err instanceof Error ? err.message : 'Unable to load MMR records';
-    } finally {
-      mmrLoading = false;
-    }
+    const { from, to } = buildRangeIso();
+    await Promise.all([
+      sessionsQuery.refresh({ start: from, end: to }),
+      weeklySkillSummaryQuery.refresh(),
+      mmrLogQuery.refresh({ from, to }),
+    ]);
   }
 
   async function submitManualMmr(event: Event) {
@@ -218,8 +200,8 @@
       manualMmrValue = '';
       manualGamesDiff = '1';
       manualPlaylistValue = '';
-  await loadMmrPlaylists();
-      await loadMmrSeries();
+      const filters = buildMmrFilters();
+      await mmrLogQuery.refresh({ from: filters.from, to: filters.to });
     } catch (err) {
       manualError = err instanceof Error ? err.message : 'Unable to log MMR';
     } finally {
@@ -231,7 +213,6 @@
     selectedPlaylist = (event.currentTarget as HTMLSelectElement).value;
     manualError = null;
     manualSuccess = null;
-    loadMmrSeries();
   }
 
   function handleDateFilterChange() {
@@ -248,7 +229,6 @@
     if (!selectedPlaylists.length && playlists.length) {
       selectedPlaylists = [...playlists];
     }
-    void loadMmrSeries();
   }
 
   function formatDate(value: string) {
@@ -722,10 +702,10 @@
     {/if}
   </div>
 
-  {#if loading}
+  {#if loadingSessions}
     <p>Loading sessions…</p>
-  {:else if error}
-    <p class="badge offline">{error}</p>
+  {:else if sessionError}
+    <p class="badge offline">{sessionError}</p>
   {:else if sessions.length === 0}
     <p>No sessions recorded yet. Start a preset on the Home screen!</p>
   {:else}

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { createSkill, deleteSkill, updateSkill } from './api';
   import type { Skill } from './api';
   import { useSkills } from './useSkills';
@@ -21,11 +20,6 @@
   let deleteError: string | null = null;
 
   const skillsStore = useSkills();
-
-  onMount(() => {
-    skillsStore.ensureLoaded();
-  });
-
   function normalizeTags(input: string) {
     const parsed = input
       .split(',')
