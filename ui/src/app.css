@@ -46,6 +46,89 @@ body {
   background: linear-gradient(180deg, rgba(3, 3, 18, 0.9) 0%, #000 100%);
 }
 
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: clamp(0.75rem, 1vw, 1.5rem);
+  flex-wrap: wrap;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.header-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.project-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.project-title {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 600;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(99, 102, 241, 0.15);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #dbe1ff;
+}
+
+.breadcrumb {
+  margin: 0;
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.18);
+  color: #ffeef3;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  max-width: min(320px, 100%);
+}
+
+.offline-status-chip {
+  padding: 0.1rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, 0.8);
+  background: rgba(248, 113, 113, 0.25);
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.offline-message-text {
+  margin: 0;
+  color: inherit;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 .navigation {
   display: flex;
   flex-wrap: wrap;
@@ -68,6 +151,11 @@ body {
   cursor: pointer;
 }
 
+.navigation button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
 .navigation button.selected,
 .navigation button:hover {
   background: rgba(99, 102, 241, 0.24);
@@ -77,6 +165,17 @@ body {
 .screen-shell {
   display: flex;
   justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .breadcrumb {
+    flex-wrap: wrap;
+  }
 }
 
 .screen-content {

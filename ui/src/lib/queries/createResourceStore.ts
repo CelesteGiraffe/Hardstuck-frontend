@@ -27,6 +27,27 @@ export type ResourceStoreOptions<T, Params> = {
   autoFetch?: boolean;
 };
 
+export function getProcessEnv(): Record<string, string | undefined> | undefined {
+  try {
+    if (typeof process !== 'undefined') {
+      return process.env as Record<string, string | undefined>;
+    }
+  } catch {
+    // ignore errors when process is not available
+  }
+
+  return undefined;
+}
+
+export function resolveIsVitestEnvironment(
+  meta: ImportMeta & { vitest?: boolean },
+  env: ImportMetaEnv & Record<string, string | undefined>,
+  processEnv?: Record<string, string | undefined> | undefined
+): boolean {
+  const resolvedProcessEnv = processEnv ?? getProcessEnv();
+  return Boolean(meta.vitest || env.VITEST || resolvedProcessEnv?.VITEST);
+}
+
 export function createResourceStore<T, Params = undefined>(
   fetcher: (params?: Params) => Promise<T>,
   options: ResourceStoreOptions<T, Params>
@@ -48,7 +69,7 @@ export function createResourceStore<T, Params = undefined>(
   const label = options.label ?? 'resource';
   const meta = import.meta as ImportMeta & { vitest?: boolean };
   const env = import.meta.env as ImportMetaEnv & Record<string, string | undefined>;
-  const isVitest = Boolean(meta.vitest || env.VITEST || process.env.VITEST);
+  const isVitest = resolveIsVitestEnvironment(meta, env);
 
   const setState = (value: ResourceState<T>) => state.set(value);
 
