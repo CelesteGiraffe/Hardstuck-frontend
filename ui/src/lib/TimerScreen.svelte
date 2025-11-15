@@ -365,12 +365,12 @@
   <section class="screen-content timer-hero glass-card">
     <div>
       <p class="hero-accent">Focused training</p>
-      <h1 class="glow-heading">Timer</h1>
+  <h1 class="glow-heading">Preset Runner</h1>
       <p class="section-copy">
         Queue up a preset to guide focused repetitions, sync your aims, and stay on the neon path.
       </p>
     </div>
-    <span class="hero-chip">Neon ready</span>
+    <span class="hero-chip">Ready</span>
   </section>
 
   <section class="screen-content preset-summary glass-card">
@@ -402,10 +402,10 @@
       <div class="empty-state">
         <p class="hero-accent">No preset selected</p>
         <h3 class="glow-heading">Ready when you are</h3>
-        <p class="section-copy">
-          Open the Presets screen and pick a routine to bring it into the timer. Blocks, durations, and lighting cues
-          will appear here as soon as you choose one.
-        </p>
+          <p class="section-copy">
+            Open the Presets screen and pick a routine to bring it into the Preset Runner. Blocks, durations, and lighting cues
+            will appear here as soon as you choose one.
+          </p>
       </div>
     {/if}
   </section>
@@ -525,7 +525,7 @@
                     updateOverrideInput(activeBlockKey, 'remaining', event.currentTarget.value)
                   }
                 />
-                <small>Adjust the clock without changing the running timer.</small>
+                <small>Adjust the clock without changing the running routine.</small>
               </label>
               <label class="override-field">
                 <span>Actual duration override</span>

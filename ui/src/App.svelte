@@ -12,17 +12,17 @@
   import { pluginInstallUrl } from './lib/constants';
 
   type Screen = {
-    id: 'home' | 'presets' | 'timer' | 'history' | 'skills';
+    id: 'home' | 'presetRunner' | 'skills' | 'presets' | 'history';
     label: string;
     component: typeof HomeScreen;
   };
 
   const screens: Screen[] = [
     { id: 'home', label: 'Home', component: HomeScreen },
-    { id: 'presets', label: 'Presets', component: PresetsScreen },
-    { id: 'timer', label: 'Timer', component: TimerScreen },
-    { id: 'history', label: 'History', component: HistoryScreen },
+    { id: 'presetRunner', label: 'Preset Runner', component: TimerScreen },
     { id: 'skills', label: 'Skills', component: SkillsScreen },
+    { id: 'presets', label: 'Presets', component: PresetsScreen },
+    { id: 'history', label: 'History', component: HistoryScreen },
   ];
 
   const projectTitle = 'RL Trainer 2';
@@ -34,7 +34,7 @@
   $: activeScreenLabel = screens.find((screen) => screen.id === $activeScreenId)?.label ?? 'Home';
   $: checklistSnapshot = $setupChecklistState;
   $: checklistHasUpdates = checklistSnapshot.updatedAt > lastChecklistSeen;
-  $: if ($activeScreenId !== 'timer') {
+  $: if ($activeScreenId !== 'presetRunner') {
     clearSelectedPreset();
   }
 </script>

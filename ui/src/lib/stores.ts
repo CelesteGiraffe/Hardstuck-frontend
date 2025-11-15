@@ -1,9 +1,9 @@
 import { writable } from 'svelte/store';
 import type { Preset } from './api';
 
-export const activeScreenId = writable<'home' | 'presets' | 'timer' | 'history' | 'skills'>('home');
+export const activeScreenId = writable<'home' | 'presetRunner' | 'skills' | 'presets' | 'history'>('home');
 
-export function navigateTo(screenId: 'home' | 'presets' | 'timer' | 'history' | 'skills') {
+export function navigateTo(screenId: 'home' | 'presetRunner' | 'skills' | 'presets' | 'history') {
   activeScreenId.set(screenId);
 }
 
@@ -11,7 +11,7 @@ export const selectedPreset = writable<Preset | null>(null);
 
 export function launchPreset(preset: Preset) {
   selectedPreset.set(preset);
-  navigateTo('timer');
+  navigateTo('presetRunner');
 }
 
 export function clearSelectedPreset() {
