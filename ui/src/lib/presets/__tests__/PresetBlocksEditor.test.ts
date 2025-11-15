@@ -1,12 +1,23 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render } from '@testing-library/svelte'
+import * as api from '../../api'
+import { resetSkillsCacheForTests } from '../../useSkills'
 import PresetBlocksEditor from '../PresetBlocksEditor.svelte'
 
+const skills = [
+  { id: 1, name: 'Footwork', category: null, tags: null, notes: null },
+  { id: 2, name: 'Aiming', category: null, tags: null, notes: null },
+]
+
 describe('PresetBlocksEditor', () => {
-  const skills = [
-    { id: 1, name: 'Footwork', category: null, tags: null, notes: null },
-    { id: 2, name: 'Aiming', category: null, tags: null, notes: null },
-  ]
+  beforeEach(() => {
+    resetSkillsCacheForTests()
+    vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
 
   it('adds another block when requested', async () => {
     const blocks = [

@@ -4,7 +4,12 @@
   "private": true,
   "scripts": {
     "start": "concurrently \"npm run start --prefix api\" \"npm run dev --prefix ui -- --host\"",
-    "test": "npm run test --prefix api && npm run test --prefix ui && npm run check --prefix ui"
+    "test": "npm run test:api && npm run test:full && npm run check:ui",
+    "test:api": "npm run test --prefix api",
+    "test:ui": "npm run test:base --prefix ui",
+    "test:bakkes": "npm run test:bakkes --prefix ui",
+    "test:full": "npm run test:ui && npm run test:bakkes",
+    "check:ui": "npm run check --prefix ui -- --host"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

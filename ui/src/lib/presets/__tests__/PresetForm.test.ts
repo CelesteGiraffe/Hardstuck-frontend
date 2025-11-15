@@ -20,8 +20,12 @@ describe('PresetForm', () => {
 
   it('creates a trimmed payload and dispatches the saved event', async () => {
     const getSkillsSpy = vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
-    const { component, getByLabelText, getByRole } = render(PresetForm)
-    const typedComponent = component as { $on: (type: string, callback: (event: unknown) => void) => void }
+    const savedHandler = vi.fn()
+    const { container, getByLabelText, getByRole, findByRole } = render(PresetForm, {
+      events: {
+        saved: savedHandler,
+      },
+    })
     const saveSpy = vi
       .spyOn(api, 'savePreset')
       .mockResolvedValue({
@@ -32,18 +36,17 @@ describe('PresetForm', () => {
         ],
       })
 
-    const savedHandler = vi.fn()
-    typedComponent.$on('saved', savedHandler)
-
     await waitFor(() => expect(getSkillsSpy).toHaveBeenCalled())
-    const submitButton = getByRole('button', { name: /save preset/i })
+    const submitButton = await findByRole('button', { name: /save preset/i })
     await waitFor(() => expect(submitButton.hasAttribute('disabled')).toBe(false))
 
     await fireEvent.input(getByLabelText(/Preset name/i), { target: { value: '  Focus routine' } })
     await fireEvent.input(getByLabelText(/Block type/i), { target: { value: '  Drill  ' } })
     await fireEvent.input(getByLabelText(/Duration \(sec\)/i), { target: { value: '120' } })
 
-    await fireEvent.submit(getByRole('form'))
+    const form = container.querySelector('form')
+    expect(form).toBeTruthy()
+    await fireEvent.submit(form as HTMLFormElement)
 
     await waitFor(() => expect(saveSpy).toHaveBeenCalled())
 
@@ -67,12 +70,15 @@ describe('PresetForm', () => {
 
   it('adds another block when the user requests it', async () => {
     const getSkillsSpy = vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
-    const { container, getByRole } = render(PresetForm)
+    const { container, getAllByRole } = render(PresetForm)
     await waitFor(() => expect(getSkillsSpy).toHaveBeenCalled())
     expect(container.querySelectorAll('fieldset')).toHaveLength(1)
 
-    await fireEvent.click(getByRole('button', { name: /add another block/i }))
+    const buttons = getAllByRole('button', { name: /add another block/i })
+    const addBlockButton = buttons.at(-1)!
+    await waitFor(() => expect(addBlockButton.hasAttribute('disabled')).toBe(false))
+    await fireEvent.click(addBlockButton)
 
-    expect(container.querySelectorAll('fieldset')).toHaveLength(2)
+    await waitFor(() => expect(container.querySelectorAll('fieldset')).toHaveLength(2))
   })
 })
