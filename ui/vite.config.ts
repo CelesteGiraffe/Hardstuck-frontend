@@ -76,6 +76,31 @@ function wrapPluginForVitest(plugin: Plugin): Plugin {
   return wrapped
 }
 
+const svelteIdRegex = /\.svelte($|\?)/
+
+function hookIdArg(key: string, args: unknown[]) {
+  if (!args.length) {
+    return undefined
+  }
+  if (key === 'transform') {
+    return args[1]
+  }
+  if (key === 'load' || key === 'resolveId' || key === 'hotUpdate') {
+    return args[0]
+  }
+  return undefined
+}
+
+function shouldSkipVitestModule(value: unknown) {
+  if (typeof value !== 'string') {
+    return false
+  }
+  if (value.includes('/vite/dist/client/env.mjs')) {
+    return true
+  }
+  return !svelteIdRegex.test(value)
+}
+
 function applyHookWrap(target: Plugin, key: string) {
   const typedKey = key as keyof Plugin
   const hook = target[typedKey]
@@ -86,7 +111,11 @@ function applyHookWrap(target: Plugin, key: string) {
     target[typedKey] = function (this: any, ...args: any[]) {
       const context = this ?? target
       ensureEnvironment(context)
-      return hook.apply(this ?? target, args)
+        const idArg = hookIdArg(key, args)
+        if (shouldSkipVitestModule(idArg)) {
+          return
+        }
+        return hook.apply(this ?? target, args)
     }
   } else if (typeof hook === 'object' && typeof hook.handler === 'function') {
     target[typedKey] = {
@@ -94,7 +123,11 @@ function applyHookWrap(target: Plugin, key: string) {
       handler: function (this: any, ...args: any[]) {
         const context = this ?? target
         ensureEnvironment(context)
-        return hook.handler.apply(this ?? target, args)
+          const idArg = hookIdArg(key, args)
+          if (shouldSkipVitestModule(idArg)) {
+            return
+          }
+          return hook.handler.apply(this ?? target, args)
       },
     }
   }
