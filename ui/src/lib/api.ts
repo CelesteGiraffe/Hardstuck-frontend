@@ -23,6 +23,14 @@ export type Skill = {
   notes: string | null;
 };
 
+export type SkillPayload = {
+  id?: number;
+  name: string;
+  category?: string | null;
+  tags?: string | null;
+  notes?: string | null;
+};
+
 export type SessionBlock = {
   id: number;
   sessionId: number;
@@ -222,7 +230,7 @@ export async function getSkillSummary({ from, to }: { from?: string; to?: string
   return (await response.json()) as SkillSummary[];
 }
 
-export async function createSkill(payload: { name: string; category?: string; notes?: string }): Promise<Skill> {
+async function postSkill(payload: SkillPayload): Promise<Skill> {
   const response = await fetch(buildUrl('/api/skills'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -235,4 +243,27 @@ export async function createSkill(payload: { name: string; category?: string; no
   }
 
   return (await response.json()) as Skill;
+}
+
+export async function createSkill(payload: SkillPayload): Promise<Skill> {
+  return postSkill({ ...payload });
+}
+
+export async function updateSkill(payload: SkillPayload): Promise<Skill> {
+  if (!payload.id) {
+    throw new Error('skill id is required to update');
+  }
+
+  return postSkill(payload);
+}
+
+export async function deleteSkill(id: number): Promise<void> {
+  const response = await fetch(buildUrl(`/api/skills/${id}`), {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error || 'Unable to delete skill');
+  }
 }
