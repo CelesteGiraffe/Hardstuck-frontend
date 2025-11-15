@@ -31,6 +31,67 @@
   let sessionEndTime: number | null = null;
   let cuePreferences = { audio: true, vibration: true };
   let lastPresetId: number | null = null;
+  let blockOverrides: Record<number, { remaining?: string; actual?: string }> = {};
+  let blockNotes: Record<number, string> = {};
+  let sessionNotes = '';
+  let activeBlockKey: number | null = null;
+  let currentBlockOverrides: { remaining?: string; actual?: string } = {};
+  let timelineEntries: TimelineEntry[] = [];
+
+  type TimelineEntry = {
+    key: number;
+    index: number;
+    type: string;
+    skillId?: number;
+    planned: number;
+    actual: number;
+    status: 'completed' | 'active' | 'upcoming';
+    hasNotes: boolean;
+  };
+
+  const getBlockKey = (block: PresetBlock, index: number) => block.id ?? block.orderIndex ?? index;
+  const parseManualValue = (value?: string) => {
+    if (!value) return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  function resetDraftStates() {
+    blockOverrides = {};
+    blockNotes = {};
+    sessionNotes = '';
+  }
+
+  function updateOverrideInput(
+    blockKey: number | null,
+    field: 'remaining' | 'actual',
+    value: string,
+  ) {
+    if (blockKey === null) return;
+    const trimmed = value.trim();
+    const nextValue = trimmed === '' ? undefined : trimmed;
+    const existing = blockOverrides[blockKey] ?? {};
+    const updated = { ...existing };
+
+    if (nextValue === undefined) {
+      delete updated[field];
+    } else {
+      updated[field] = nextValue;
+    }
+
+    if (Object.keys(updated).length === 0) {
+      const cloned = { ...blockOverrides };
+      delete cloned[blockKey];
+      blockOverrides = cloned;
+      return;
+    }
+
+    blockOverrides = { ...blockOverrides, [blockKey]: updated };
+  }
+
+  function handleBlockNoteChange(blockKey: number, text: string) {
+    blockNotes = { ...blockNotes, [blockKey]: text };
+  }
 
   $: activePreset = $selectedPreset;
   $: presetBlocks = activePreset?.blocks ?? [];
@@ -46,6 +107,36 @@
   $: elapsedSeconds = Math.max(0, totalPlanned - plannedRemaining);
   $: progressRatio = totalPlanned ? Math.min(1, elapsedSeconds / totalPlanned) : 0;
   $: progressOffset = PROGRESS_CIRCUMFERENCE * (1 - progressRatio);
+
+  $: activeBlockKey = activeBlock ? getBlockKey(activeBlock, currentBlockIndex) : null;
+  $: currentBlockOverrides = activeBlockKey !== null ? blockOverrides[activeBlockKey] ?? {} : {};
+  $: timelineEntries = presetBlocks.map((block, index) => {
+    const key = getBlockKey(block, index);
+    const isCompleted = sessionComplete || index < currentBlockIndex;
+    const isActive = index === currentBlockIndex && !sessionComplete;
+    const overrideValues = blockOverrides[key] ?? {};
+    const manualActual = parseManualValue(overrideValues.actual);
+    const planned = block.durationSeconds ?? 0;
+    let defaultActual = 0;
+
+    if (isCompleted) {
+      defaultActual = planned;
+    } else if (isActive) {
+      defaultActual = Math.max(0, planned - remainingSeconds);
+    }
+
+    const actual = manualActual ?? defaultActual;
+    return {
+      key,
+      index,
+      type: block.type,
+      skillId: block.skillId,
+      planned,
+      actual,
+      status: (isCompleted ? 'completed' : isActive ? 'active' : 'upcoming') as TimelineEntry['status'],
+      hasNotes: Boolean((blockNotes[key] ?? block.notes ?? '').trim()),
+    };
+  });
 
   $: if (hasPreset && activePreset?.id !== lastPresetId) {
     lastPresetId = activePreset?.id ?? null;
@@ -78,6 +169,7 @@
 
   function resetTimerState() {
     stopTicker();
+    resetDraftStates();
     sessionComplete = false;
     isRunning = false;
     currentBlockIndex = 0;
@@ -258,98 +350,188 @@
 
   {#if hasPreset}
     <section class="screen-content timer-panel glass-card">
-      <div class="timer-panel-inner">
-        <div class="progress-ring" aria-live="polite">
-          <svg viewBox="0 0 180 180" role="img" aria-label="Preset progress">
-            <circle
-              class="ring-base"
-              cx="90"
-              cy="90"
-              r={PROGRESS_RADIUS}
-              stroke-width="10"
-            />
-            <circle
-              class="ring-progress"
-              cx="90"
-              cy="90"
-              r={PROGRESS_RADIUS}
-              stroke-width="10"
-              stroke-dasharray={PROGRESS_CIRCUMFERENCE}
-              stroke-dashoffset={progressOffset}
-              stroke-linecap="round"
-            />
-          </svg>
-          <div class="ring-labels">
-            <strong>{formatDuration(remainingSeconds)}</strong>
-            <span>{isRunning ? 'Running' : sessionComplete ? 'Session complete' : 'Paused'}</span>
-          </div>
-          <p class="ring-secondary">
-            {formatDuration(elapsedSeconds)} · {formatDuration(totalPlanned)} elapsed
-          </p>
-        </div>
-        <div class="timer-details">
-          <p class="meta-label">Current block</p>
-          <h3>
-            {activeBlock?.type ?? 'Standby'}
-            <span class="inline-label">{currentBlockIndex + 1}/{blockCount}</span>
-          </h3>
-          <p class="section-copy">
-            Skill {activeBlock?.skillId ?? '—'} · {formatDuration(activeBlock?.durationSeconds)} planned
-          </p>
-          <div class="session-times">
-            <div>
-              <span class="meta-label">Session start</span>
-              <strong>{formatTimeLabel(sessionStartTime)}</strong>
+      <div class="timer-panel-layout">
+        <div class="timer-primary">
+          <div class="timer-panel-inner">
+            <div class="progress-ring" aria-live="polite">
+              <svg viewBox="0 0 180 180" role="img" aria-label="Preset progress">
+                <circle
+                  class="ring-base"
+                  cx="90"
+                  cy="90"
+                  r={PROGRESS_RADIUS}
+                  stroke-width="10"
+                />
+                <circle
+                  class="ring-progress"
+                  cx="90"
+                  cy="90"
+                  r={PROGRESS_RADIUS}
+                  stroke-width="10"
+                  stroke-dasharray={PROGRESS_CIRCUMFERENCE}
+                  stroke-dashoffset={progressOffset}
+                  stroke-linecap="round"
+                />
+              </svg>
+              <div class="ring-labels">
+                <strong>{formatDuration(remainingSeconds)}</strong>
+                <span>{isRunning ? 'Running' : sessionComplete ? 'Session complete' : 'Paused'}</span>
+              </div>
+              <p class="ring-secondary">
+                {formatDuration(elapsedSeconds)} · {formatDuration(totalPlanned)} elapsed
+              </p>
             </div>
-            <div>
-              <span class="meta-label">Session end</span>
-              <strong>{formatTimeLabel(sessionEndTime)}</strong>
+            <div class="timer-details">
+              <p class="meta-label">Current block</p>
+              <h3>
+                {activeBlock?.type ?? 'Standby'}
+                <span class="inline-label">{currentBlockIndex + 1}/{blockCount}</span>
+              </h3>
+              <p class="section-copy">
+                Skill {activeBlock?.skillId ?? '—'} · {formatDuration(activeBlock?.durationSeconds)} planned
+              </p>
+              <div class="session-times">
+                <div>
+                  <span class="meta-label">Session start</span>
+                  <strong>{formatTimeLabel(sessionStartTime)}</strong>
+                </div>
+                <div>
+                  <span class="meta-label">Session end</span>
+                  <strong>{formatTimeLabel(sessionEndTime)}</strong>
+                </div>
+              </div>
             </div>
           </div>
+          <div class="timer-controls">
+            <button
+              type="button"
+              on:click={previousBlock}
+              disabled={!hasPreset || blockCount === 0 || currentBlockIndex === 0}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              class="primary"
+              on:click={startTimer}
+              disabled={!hasPreset || blockCount === 0 || isRunning}
+            >
+              {sessionComplete ? 'Restart' : 'Start'}
+            </button>
+            <button type="button" on:click={pauseTimer} disabled={!isRunning}>
+              Pause
+            </button>
+            <button
+              type="button"
+              on:click={skipBlock}
+              disabled={!hasPreset || blockCount === 0 || sessionComplete}
+            >
+              Skip
+            </button>
+          </div>
+          <div class="timer-cues">
+            <label class="cue-toggle">
+              <input
+                type="checkbox"
+                data-testid="audio-toggle"
+                checked={cuePreferences.audio}
+                on:change={(event) => setCuePreference('audio', event.currentTarget.checked)}
+              />
+              Audio cues
+            </label>
+            <label class="cue-toggle">
+              <input
+                type="checkbox"
+                data-testid="vibration-toggle"
+                checked={cuePreferences.vibration}
+                on:change={(event) => setCuePreference('vibration', event.currentTarget.checked)}
+              />
+              Vibration cues
+            </label>
+          </div>
+          {#if activeBlock}
+            <div class="override-group">
+              <label class="override-field">
+                <span>Remaining override</span>
+                <input
+                  data-testid="remaining-override-input"
+                  type="number"
+                  min="0"
+                  inputmode="numeric"
+                  value={currentBlockOverrides.remaining ?? ''}
+                  on:input={(event) =>
+                    updateOverrideInput(activeBlockKey, 'remaining', event.currentTarget.value)
+                  }
+                />
+                <small>Adjust the clock without changing the running timer.</small>
+              </label>
+              <label class="override-field">
+                <span>Actual duration override</span>
+                <input
+                  data-testid="actual-override-input"
+                  type="number"
+                  min="0"
+                  inputmode="numeric"
+                  value={currentBlockOverrides.actual ?? ''}
+                  on:input={(event) =>
+                    updateOverrideInput(activeBlockKey, 'actual', event.currentTarget.value)
+                  }
+                />
+                <small>Correct the actual duration that appears in the timeline.</small>
+              </label>
+            </div>
+          {/if}
         </div>
-      </div>
-      <div class="timer-controls">
-        <button
-          type="button"
-          on:click={previousBlock}
-          disabled={!hasPreset || blockCount === 0 || currentBlockIndex === 0}
-        >
-          Previous
-        </button>
-        <button
-          type="button"
-          class="primary"
-          on:click={startTimer}
-          disabled={!hasPreset || blockCount === 0 || isRunning}
-        >
-          {sessionComplete ? 'Restart' : 'Start'}
-        </button>
-        <button type="button" on:click={pauseTimer} disabled={!isRunning}>
-          Pause
-        </button>
-        <button type="button" on:click={skipBlock} disabled={!hasPreset || blockCount === 0 || sessionComplete}>
-          Skip
-        </button>
-      </div>
-      <div class="timer-cues">
-        <label class="cue-toggle">
-          <input
-            type="checkbox"
-            data-testid="audio-toggle"
-            checked={cuePreferences.audio}
-            on:change={(event) => setCuePreference('audio', event.currentTarget.checked)}
-          />
-          Audio cues
-        </label>
-        <label class="cue-toggle">
-          <input
-            type="checkbox"
-            data-testid="vibration-toggle"
-            checked={cuePreferences.vibration}
-            on:change={(event) => setCuePreference('vibration', event.currentTarget.checked)}
-          />
-          Vibration cues
-        </label>
+        <aside class="timeline-panel">
+          <header class="timeline-header">
+            <div>
+              <p class="hero-accent">Timeline</p>
+              <h3>Block flow</h3>
+            </div>
+            <p class="section-copy">
+              Planned vs actual durations, active status, and saved notes appear here as you move through the preset.
+            </p>
+          </header>
+          <ul class="timeline-list">
+            {#each timelineEntries as entry (entry.key)}
+              <li
+                class="timeline-item"
+                class:timeline-active={entry.status === 'active'}
+                class:timeline-completed={entry.status === 'completed'}
+              >
+                <div class="timeline-item-header">
+                  <div>
+                    <p class="meta-label">Block {entry.index + 1}</p>
+                    <strong>{entry.type ?? 'Block'}</strong>
+                    <span class="timeline-skill">Skill {entry.skillId ?? '—'}</span>
+                  </div>
+                  <span class="timeline-status">
+                    {entry.status === 'active'
+                      ? 'Active'
+                      : entry.status === 'completed'
+                      ? 'Completed'
+                      : 'Upcoming'}
+                  </span>
+                </div>
+                <div class="timeline-item-durations">
+                  <div>
+                    <span class="meta-label">Planned</span>
+                    <strong>{formatDuration(entry.planned)}</strong>
+                  </div>
+                  <div>
+                    <span class="meta-label">Actual</span>
+                    <strong data-testid={`timeline-actual-${entry.key}`}>
+                      {formatDuration(entry.actual)}
+                    </strong>
+                  </div>
+                </div>
+                {#if entry.status === 'completed' && entry.hasNotes}
+                  <span class="note-badge">Notes saved</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </aside>
       </div>
     </section>
   {/if}
@@ -363,7 +545,7 @@
         </div>
       </div>
       <div class="blocks-grid">
-        {#each activePreset?.blocks ?? [] as block}
+        {#each activePreset?.blocks ?? [] as block, index (getBlockKey(block, index))}
           <article class="block-card">
             <div class="block-card-type">{block.type}</div>
             <div class="block-card-duration">
@@ -374,12 +556,36 @@
               <span>Skill ID</span>
               <strong>{block.skillId}</strong>
             </div>
-            {#if block.notes}
-              <p class="block-card-notes">{block.notes}</p>
-            {/if}
+            <label class="block-card-note">
+              <span>Notes</span>
+              <textarea
+                rows="2"
+                value={blockNotes[getBlockKey(block, index)] ?? block.notes ?? ''}
+                placeholder="Capture thoughts or reminders"
+                on:input={(event) => handleBlockNoteChange(getBlockKey(block, index), event.currentTarget.value)}
+              ></textarea>
+            </label>
           </article>
         {/each}
       </div>
+    </section>
+  {/if}
+  {#if hasPreset}
+    <section class="screen-content notes-section glass-card">
+      <div class="notes-header">
+        <div>
+          <p class="hero-accent">Session notes</p>
+          <h3>Reflections</h3>
+        </div>
+        <p class="section-copy">Draft thoughts stay in this space until you clear them.</p>
+      </div>
+      <textarea
+        class="notes-textarea"
+        rows="4"
+        bind:value={sessionNotes}
+        placeholder="What worked today? What do you want to adjust next time?"
+        data-testid="session-notes"
+      ></textarea>
     </section>
   {/if}
 </main>
@@ -444,6 +650,16 @@
   }
 
   .timer-panel {
+    display: block;
+  }
+
+  .timer-panel-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: clamp(1rem, 2vw, 1.5rem);
+  }
+
+  .timer-primary {
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -454,6 +670,122 @@
     gap: clamp(1rem, 2vw, 1.5rem);
     align-items: center;
     flex-wrap: wrap;
+  }
+
+  .timeline-panel {
+    border-radius: var(--card-radius);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 1rem;
+    background: rgba(4, 6, 20, 0.65);
+    box-shadow: var(--glow);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-height: 520px;
+  }
+
+  .timeline-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .timeline-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow-y: auto;
+    max-height: 360px;
+  }
+
+  .timeline-item {
+    border-radius: var(--card-radius);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 0.75rem;
+    background: rgba(15, 23, 42, 0.7);
+    box-shadow: var(--glow);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .timeline-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .timeline-skill {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .timeline-status {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #a5b4fc;
+  }
+
+  .timeline-item-durations {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .timeline-item-durations strong {
+    font-size: 0.95rem;
+    color: #fff;
+  }
+
+  .timeline-active {
+    border-color: rgba(244, 114, 182, 0.9);
+  }
+
+  .timeline-completed {
+    opacity: 0.92;
+  }
+
+  .note-badge {
+    align-self: flex-start;
+    background: rgba(99, 102, 241, 0.2);
+    color: #e0e7ff;
+    padding: 0.2rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .override-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .override-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .override-field input {
+    border-radius: var(--card-radius);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    padding: 0.45rem 0.6rem;
+  }
+
+  .override-field small {
+    font-size: 0.65rem;
+    color: var(--text-muted);
   }
 
   .progress-ring {
@@ -623,10 +955,50 @@
     font-size: 1rem;
   }
 
-  .block-card-notes {
-    margin: 0;
+  .block-card-note {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
     font-size: 0.8rem;
     color: var(--text-muted);
+  }
+
+  .block-card-note textarea {
+    width: 100%;
+    border-radius: var(--card-radius);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.03);
+    color: #fff;
+    padding: 0.5rem;
+    resize: vertical;
+    min-height: 78px;
+    font-size: 0.85rem;
+  }
+
+  .notes-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .notes-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .notes-textarea {
+    width: 100%;
+    border-radius: var(--card-radius);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    padding: 0.75rem;
+    font-size: 0.9rem;
+    min-height: 140px;
+    resize: vertical;
   }
 
   @media (max-width: 640px) {
@@ -645,6 +1017,16 @@
 
     .session-times {
       grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .timer-panel-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .timeline-panel {
+      order: 2;
     }
   }
 </style>
