@@ -76,7 +76,7 @@
         on:click={() => {
           const nextOpen = !checklistOpen;
           checklistOpen = nextOpen;
-          if (!nextOpen) {
+          if (nextOpen) {
             lastChecklistSeen = checklistSnapshot.updatedAt;
           }
         }}
