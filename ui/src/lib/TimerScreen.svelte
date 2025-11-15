@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { selectedPreset } from './stores';
-  import { createSession, getSkills } from './api';
+  import { createSession } from './api';
+  import { useSkills } from './useSkills';
   import type { Preset, PresetBlock, Skill, SessionBlockPayload } from './api';
 
   type RecordedBlock = {
@@ -19,6 +20,7 @@
   let sessionComplete = false;
   let timerHandle: ReturnType<typeof setInterval> | null = null;
   let skillsMap: Record<number, Skill> = {};
+  const skillsStore = useSkills();
   let sessionStartTime: string | null = null;
   let sessionEndTime: string | null = null;
   let sessionBlocks: RecordedBlock[] = [];
@@ -61,14 +63,11 @@
     saveResultMessage = null;
   }
 
-  onMount(async () => {
-    try {
-      const skills = await getSkills();
-      skillsMap = Object.fromEntries(skills.map((skill) => [skill.id, skill]));
-    } catch (error) {
-      console.error('Unable to load skills', error);
-    }
+  onMount(() => {
+    skillsStore.ensureLoaded();
   });
+
+  $: skillsMap = Object.fromEntries($skillsStore.skills.map((skill) => [skill.id, skill]));
 
   onDestroy(() => {
     unsubscribe();

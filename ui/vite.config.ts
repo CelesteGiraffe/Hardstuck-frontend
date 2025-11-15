@@ -1,13 +1,15 @@
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
-import type { Plugin, UserConfig } from 'vite'
+import type { Plugin, ResolvedConfig, UserConfig } from 'vite'
 import type { UserConfig as VitestUserConfig } from 'vitest/config'
 
 const isTest = Boolean(process.env.VITEST)
 
 const sveltePlugins = svelte({
+  hot: !isTest,
   emitCss: !isTest,
   compilerOptions: {
+    dev: !isTest,
     hmr: !isTest,
   },
   exclude: isTest ? [/vite\/dist\/client\/env\.mjs($|\?)/] : undefined,
@@ -38,8 +40,74 @@ export default defineConfig(config)
 const testEnvironmentBaseConfig: Record<string, unknown> = {
   consumer: 'client',
   command: 'test',
-  build: { watch: false },
+  mode: 'test',
+  root: process.cwd(),
+  base: '/',
+  publicDir: 'public',
+  envDir: process.cwd(),
   assetsInclude: () => false,
+  build: {
+    watch: false,
+    cssMinify: false,
+    rollupOptions: { output: [] },
+  },
+  css: {
+    transformer: 'postcss',
+    devSourcemap: false,
+    modules: false,
+    preprocessorOptions: {},
+  },
+  logger: {
+    info: () => {},
+    warn: () => {},
+    warnOnce: () => {},
+    error: () => {},
+    hasWarned: false,
+    clearScreen: () => {},
+  },
+  resolve: {
+    alias: [],
+    conditions: [],
+    extensions: ['.mjs', '.js', '.ts', '.tsx'],
+    dedupe: [],
+    preserveSymlinks: false,
+  },
+  optimizeDeps: {},
+  environments: {
+    client: {
+      build: { watch: false },
+    },
+  },
+}
+
+function ensureResolvedConfigHasEnvironments(config: ResolvedConfig): ResolvedConfig {
+  if (config.environments?.client) {
+    return config
+  }
+
+  const baseClient = {
+    build: config.build ?? (testEnvironmentBaseConfig.build as Record<string, unknown>),
+    css: config.css ?? (testEnvironmentBaseConfig.css as Record<string, unknown>),
+    resolve: config.resolve ?? (testEnvironmentBaseConfig.resolve as Record<string, unknown>),
+    optimizeDeps:
+      config.optimizeDeps ?? (testEnvironmentBaseConfig.optimizeDeps as Record<string, unknown>),
+    logger: config.logger ?? (testEnvironmentBaseConfig.logger as Record<string, unknown>),
+    consumer: 'client',
+    plugins: config.plugins ?? [],
+  }
+
+  const environments = {
+    ...(config.environments ?? {}),
+    client: {
+      ...(config.environments?.client as Record<string, unknown>),
+      ...baseClient,
+    },
+  }
+
+  return ({
+    ...(config as unknown as Record<string, any>),
+    environments,
+  } as unknown) as ResolvedConfig
 }
 
 function wrapPluginForVitest(plugin: Plugin): Plugin {
@@ -52,11 +120,12 @@ function wrapPluginForVitest(plugin: Plugin): Plugin {
   if (plugin.configResolved) {
     const original = plugin.configResolved
     const handler = (typeof original === 'function' ? original : original.handler) as (...args: any[]) => any
-    const wrapper = function (this: any, config: any, ...args: any[]) {
+    const wrapper = function (this: any, config: ResolvedConfig, ...args: any[]) {
+      const normalizedConfig = ensureResolvedConfigHasEnvironments(config)
       const context = this ?? wrapped
       ensureEnvironment(context)
-      context.environment.config = config
-      return handler.apply(this ?? wrapped, [config, ...args])
+      context.environment.config = normalizedConfig
+      return handler.apply(this ?? wrapped, [normalizedConfig, ...args])
     }
     if (typeof original === 'function') {
       wrapped.configResolved = wrapper
@@ -78,7 +147,7 @@ function wrapPluginForVitest(plugin: Plugin): Plugin {
 
 const svelteIdRegex = /\.svelte($|\?)/
 
-function hookIdArg(key: string, args: unknown[]) {
+function hookIdArg(key: string, args: unknown[]): unknown {
   if (!args.length) {
     return undefined
   }
@@ -98,6 +167,9 @@ function shouldSkipVitestModule(value: unknown) {
   if (value.includes('/vite/dist/client/env.mjs')) {
     return true
   }
+  if (value.includes('svelte/internal')) {
+    return false
+  }
   return !svelteIdRegex.test(value)
 }
 
@@ -111,11 +183,11 @@ function applyHookWrap(target: Plugin, key: string) {
     target[typedKey] = function (this: any, ...args: any[]) {
       const context = this ?? target
       ensureEnvironment(context)
-        const idArg = hookIdArg(key, args)
-        if (shouldSkipVitestModule(idArg)) {
-          return
-        }
-        return hook.apply(this ?? target, args)
+      const idArg = hookIdArg(key, args)
+      if (shouldSkipVitestModule(idArg)) {
+        return
+      }
+      return hook.apply(this ?? target, args)
     }
   } else if (typeof hook === 'object' && typeof hook.handler === 'function') {
     target[typedKey] = {
@@ -123,11 +195,11 @@ function applyHookWrap(target: Plugin, key: string) {
       handler: function (this: any, ...args: any[]) {
         const context = this ?? target
         ensureEnvironment(context)
-          const idArg = hookIdArg(key, args)
-          if (shouldSkipVitestModule(idArg)) {
-            return
-          }
-          return hook.handler.apply(this ?? target, args)
+        const idArg = hookIdArg(key, args)
+        if (shouldSkipVitestModule(idArg)) {
+          return
+        }
+        return hook.handler.apply(this ?? target, args)
       },
     }
   }
@@ -144,5 +216,15 @@ function ensureEnvironment(context: any) {
     }
   } else if (!context.environment.config) {
     context.environment.config = { ...testEnvironmentBaseConfig }
+  }
+
+  const clientConfig = context.environment.config
+  if (!context.environment.client) {
+    context.environment.client = {
+      ...testEnvironmentBaseConfig,
+      config: clientConfig,
+    }
+  } else if (!context.environment.client.config) {
+    context.environment.client.config = clientConfig
   }
 }

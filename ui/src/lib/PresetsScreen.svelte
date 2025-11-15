@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PresetForm from './presets/PresetForm.svelte';
-  import { getPresets, getSkills, deletePreset } from './api';
-  import type { Preset, Skill } from './api';
+  import { getPresets, deletePreset } from './api';
+  import type { Preset } from './api';
+  import { useSkills } from './useSkills';
 
   let presets: Preset[] = [];
-  let skills: Skill[] = [];
   let loading = false;
   let error: string | null = null;
   let selectedPresetId: number | null = null;
@@ -15,10 +15,10 @@
   let deleteError: string | null = null;
   let deleting = false;
 
-  let skillsLoading = false;
+  const skillsStore = useSkills();
 
   $: selectedPreset = presets.find((preset) => preset.id === selectedPresetId) ?? null;
-  $: skillLookup = Object.fromEntries(skills.map((skill) => [skill.id, skill.name]));
+  $: skillLookup = Object.fromEntries($skillsStore.skills.map((skill) => [skill.id, skill.name]));
 
   onMount(() => {
     const handleUpdates = () => refreshPresets();
@@ -29,20 +29,17 @@
 
   async function loadData() {
     loading = true;
-    skillsLoading = true;
     error = null;
 
     try {
-      const [presetData, skillData] = await Promise.all([getPresets(), getSkills()]);
-      presets = presetData;
-      skills = skillData;
+      const data = await getPresets();
+      presets = data;
       ensureSelection();
     } catch (loadError) {
-      console.error('Failed to load presets or skills', loadError);
+      console.error('Failed to load presets', loadError);
       error = 'Unable to load preset data';
     } finally {
       loading = false;
-      skillsLoading = false;
       formKey += 1;
     }
   }
@@ -176,11 +173,8 @@
         </div>
 
         {#key formKey}
-          <PresetForm {skills} preset={editingPreset} on:saved={handleSaved} />
+          <PresetForm preset={editingPreset} on:saved={handleSaved} />
         {/key}
-        {#if skillsLoading}
-          <p class="form-error">Loading skills…</p>
-        {/if}
       </div>
 
       <div class="preset-detail glass-card">

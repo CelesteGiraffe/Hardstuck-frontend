@@ -2,13 +2,13 @@
   import { onMount } from 'svelte';
   import {
     getSessions,
-    getSkills,
     getPresets,
     getSkillSummary,
     getMmrRecords,
     createMmrLog,
   } from './api';
   import type { Session, SessionBlock, SkillSummary, MmrRecord } from './api';
+  import { useSkills } from './useSkills';
 
   let sessions: Session[] = [];
   let selectedSession: Session | null = null;
@@ -16,6 +16,8 @@
   let error: string | null = null;
   let skillMap: Record<number, string> = {};
   let presetMap: Record<number, string> = {};
+  const skillsStore = useSkills();
+  $: skillMap = Object.fromEntries($skillsStore.skills.map((skill) => [skill.id, skill.name]));
   let summary: SkillSummary[] = [];
   let summaryLoading = true;
   let summaryError: string | null = null;
@@ -50,9 +52,8 @@
     error = null;
 
     try {
-      const [sessionData, skills, presets] = await Promise.all([getSessions(), getSkills(), getPresets()]);
+      const [sessionData, presets] = await Promise.all([getSessions(), getPresets()]);
       sessions = sessionData.sort((a, b) => new Date(b.startedTime).getTime() - new Date(a.startedTime).getTime());
-      skillMap = Object.fromEntries(skills.map((skill) => [skill.id, skill.name]));
       presetMap = Object.fromEntries(presets.map((preset) => [preset.id, preset.name]));
     } catch (err) {
       error = err instanceof Error ? err.message : 'Unable to load sessions';

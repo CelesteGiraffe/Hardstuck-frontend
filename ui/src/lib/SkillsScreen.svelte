@@ -1,10 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getSkills, createSkill, type Skill } from './api';
-
-  let skills: Skill[] = [];
-  let loading = true;
-  let error: string | null = null;
+  import { createSkill } from './api';
+  import type { Skill } from './api';
+  import { useSkills } from './useSkills';
 
   let name = '';
   let category = '';
@@ -12,19 +10,11 @@
   let saving = false;
   let formError: string | null = null;
 
-  const loadSkills = async () => {
-    loading = true;
-    error = null;
-    try {
-      skills = await getSkills();
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to load skills';
-    } finally {
-      loading = false;
-    }
-  };
+  const skillsStore = useSkills();
 
-  onMount(loadSkills);
+  onMount(() => {
+    skillsStore.ensureLoaded();
+  });
 
   const handleSubmit = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -38,10 +28,10 @@
     saving = true;
     try {
       await createSkill({ name: name.trim(), category: category.trim() || undefined, notes: notes.trim() || undefined });
-      name = '';
-      category = '';
-      notes = '';
-      await loadSkills();
+  name = '';
+  category = '';
+  notes = '';
+  await skillsStore.refresh();
     } catch (err) {
       formError = err instanceof Error ? err.message : 'Failed to save skill';
     } finally {
@@ -55,15 +45,15 @@
   <p>Manage skill categories and notes here.</p>
 
   <div class="skills-muted">
-    {#if loading}
+    {#if $skillsStore.loading}
       Loading skills...
-    {:else if error}
-      <span class="badge offline">{error}</span>
-    {:else if skills.length === 0}
+    {:else if $skillsStore.error}
+      <span class="badge offline">{$skillsStore.error}</span>
+    {:else if $skillsStore.skills.length === 0}
       <span>No skills added yet.</span>
     {:else}
       <ul class="skill-list">
-        {#each skills as skill}
+        {#each $skillsStore.skills as skill}
           <li>
             <strong>{skill.name}</strong>
             {#if skill.category}

@@ -4,13 +4,13 @@
     healthCheck,
     getPresets,
     getSessions,
-    getSkills,
     getSkillSummary,
     getMmrRecords,
     createSession,
   } from './api';
   import type { Preset, Skill, Session, SkillSummary, MmrRecord } from './api';
   import { navigateTo, selectedPreset } from './stores';
+  import { useSkills } from './useSkills';
 
   let apiHealthy: boolean | null = null;
 
@@ -18,10 +18,18 @@
   let loadingPresets = false;
   let presetError: string | null = null;
 
-  let skills: Skill[] = [];
+  const skillsStore = useSkills();
+  let skillList: Skill[] = [];
   let skillsLoading = false;
   let skillsError: string | null = null;
   let quickSkillId: number | null = null;
+
+  $: skillList = $skillsStore.skills;
+  $: skillsLoading = $skillsStore.loading;
+  $: skillsError = $skillsStore.error;
+  $: if (quickSkillId === null && skillList.length) {
+    quickSkillId = skillList[0].id;
+  }
   let quickMinutes = '10';
   let quickSubmitting = false;
   let quickSuccess: string | null = null;
@@ -41,7 +49,8 @@
 
   onMount(async () => {
     apiHealthy = await healthCheck();
-    await Promise.all([loadPresets(), loadSkills()]);
+    await loadPresets();
+    skillsStore.ensureLoaded();
     await Promise.all([loadSessions(), loadSkillSummary(), loadLatestMmr()]);
   });
 
@@ -56,23 +65,6 @@
       presetError = 'Unable to load presets';
     } finally {
       loadingPresets = false;
-    }
-  }
-
-  async function loadSkills() {
-    skillsLoading = true;
-    skillsError = null;
-
-    try {
-      skills = await getSkills();
-      if (skills.length && quickSkillId === null) {
-        quickSkillId = skills[0].id;
-      }
-    } catch (error) {
-      console.error('Failed to load skills', error);
-      skillsError = 'Unable to load skills';
-    } finally {
-      skillsLoading = false;
     }
   }
 
@@ -184,7 +176,7 @@
         ],
       });
 
-      const skillName = skills.find((skill) => skill.id === quickSkillId)?.name ?? 'skill';
+  const skillName = skillList.find((skill) => skill.id === quickSkillId)?.name ?? 'skill';
       quickSuccess = `Logged ${minutes} min for ${skillName}`;
       quickMinutes = '10';
 
@@ -283,13 +275,16 @@
           <select disabled>
             <option>Loading skills…</option>
           </select>
-        {:else if skills.length === 0}
+        {:else if skillList.length === 0}
           <select disabled>
             <option>No skills yet</option>
           </select>
         {:else}
-          <select value={quickSkillId ?? ''} on:change={(event) => (quickSkillId = Number((event.currentTarget as HTMLSelectElement).value))}>
-            {#each skills as skill}
+          <select
+            value={quickSkillId ?? ''}
+            on:change={(event) => (quickSkillId = Number((event.currentTarget as HTMLSelectElement).value))}
+          >
+            {#each skillList as skill}
               <option value={skill.id}>{skill.name}</option>
             {/each}
           </select>
@@ -309,11 +304,14 @@
       <button
         type="submit"
         class="button-neon"
-        disabled={quickSubmitting || skillsLoading || skills.length === 0}
+        disabled={quickSubmitting || skillsLoading || skillList.length === 0}
       >
         {quickSubmitting ? 'Logging…' : 'Log quick block'}
       </button>
     </form>
+    {#if skillsError}
+      <p class="form-error quick-feedback">{skillsError}</p>
+    {/if}
     {#if quickError}
       <p class="form-error quick-feedback">{quickError}</p>
     {:else if quickSuccess}

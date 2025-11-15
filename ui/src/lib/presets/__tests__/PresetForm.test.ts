@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, waitFor } from '@testing-library/svelte'
 import * as api from '../../api'
+import { resetSkillsCacheForTests } from '../../useSkills'
 import PresetForm from '../PresetForm.svelte'
 
 describe('PresetForm', () => {
@@ -9,12 +10,17 @@ describe('PresetForm', () => {
     { id: 2, name: 'Aiming', category: null, tags: null, notes: null },
   ]
 
+  beforeEach(() => {
+    resetSkillsCacheForTests()
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
   it('creates a trimmed payload and dispatches the saved event', async () => {
-    const { component, getByLabelText, getByRole } = render(PresetForm, { props: { skills } })
+    const getSkillsSpy = vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
+    const { component, getByLabelText, getByRole } = render(PresetForm)
     const typedComponent = component as { $on: (type: string, callback: (event: unknown) => void) => void }
     const saveSpy = vi
       .spyOn(api, 'savePreset')
@@ -28,6 +34,10 @@ describe('PresetForm', () => {
 
     const savedHandler = vi.fn()
     typedComponent.$on('saved', savedHandler)
+
+    await waitFor(() => expect(getSkillsSpy).toHaveBeenCalled())
+    const submitButton = getByRole('button', { name: /save preset/i })
+    await waitFor(() => expect(submitButton.hasAttribute('disabled')).toBe(false))
 
     await fireEvent.input(getByLabelText(/Preset name/i), { target: { value: '  Focus routine' } })
     await fireEvent.input(getByLabelText(/Block type/i), { target: { value: '  Drill  ' } })
@@ -56,7 +66,9 @@ describe('PresetForm', () => {
   })
 
   it('adds another block when the user requests it', async () => {
-    const { container, getByRole } = render(PresetForm, { props: { skills } })
+    const getSkillsSpy = vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
+    const { container, getByRole } = render(PresetForm)
+    await waitFor(() => expect(getSkillsSpy).toHaveBeenCalled())
     expect(container.querySelectorAll('fieldset')).toHaveLength(1)
 
     await fireEvent.click(getByRole('button', { name: /add another block/i }))
