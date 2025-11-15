@@ -207,8 +207,12 @@ export async function createSession(payload: SessionPayload): Promise<void> {
   }
 }
 
-export async function getSessions(): Promise<Session[]> {
-  const response = await fetch(buildUrl('/api/sessions'));
+export async function getSessions(filters: { start?: string; end?: string } = {}): Promise<Session[]> {
+  const params = new URLSearchParams();
+  if (filters.start) params.set('start', filters.start);
+  if (filters.end) params.set('end', filters.end);
+  const path = `/api/sessions${params.toString() ? `?${params}` : ''}`;
+  const response = await fetch(buildUrl(path));
   if (!response.ok) {
     throw new Error('Unable to load sessions');
   }

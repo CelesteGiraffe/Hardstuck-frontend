@@ -29,11 +29,49 @@
   const CHART_INNER_WIDTH = CHART_VIEW_WIDTH - CHART_PADDING * 2;
   const CHART_INNER_HEIGHT = CHART_VIEW_HEIGHT - CHART_PADDING * 2;
 
+  const HISTORY_WINDOW_DAYS = 30;
+
+  function formatInputDate(date: Date) {
+    return date.toISOString().split('T')[0];
+  }
+
+  function toIsoFilterDate(value?: string, endOfDay = false) {
+    if (!value) {
+      return undefined;
+    }
+
+    const time = endOfDay ? '23:59:59.999Z' : '00:00:00.000Z';
+    return new Date(`${value}T${time}`).toISOString();
+  }
+
+  function buildRangeIso() {
+    const from = toIsoFilterDate(startDate);
+    const to = toIsoFilterDate(endDate, true);
+    return { from, to };
+  }
+
+  function buildSessionFilters() {
+    const { from, to } = buildRangeIso();
+    return { start: from, end: to };
+  }
+
+  function buildMmrFilters() {
+    return buildRangeIso();
+  }
+
+  const today = new Date();
+  const defaultStart = new Date(today);
+  defaultStart.setDate(today.getDate() - HISTORY_WINDOW_DAYS);
+  let startDate = formatInputDate(defaultStart);
+  let endDate = formatInputDate(today);
+
   let mmrRecords: MmrRecord[] = [];
   let mmrLoading = true;
   let mmrError: string | null = null;
   let playlists: string[] = [];
   let selectedPlaylist: string | null = null;
+  let selectedPlaylists: string[] = [];
+  let mmrSeriesByPlaylist: Record<string, MmrRecord[]> = {};
   let manualMmrValue = '';
   let manualGamesDiff = '1';
   let manualSubmitting = false;
@@ -42,9 +80,8 @@
   let manualPlaylistValue = '';
 
   onMount(() => {
-    loadSessions();
     loadSummary();
-    initializeMmrChart();
+    void refreshHistoryData();
   });
 
   async function loadSessions() {
@@ -52,7 +89,7 @@
     error = null;
 
     try {
-      const [sessionData, presets] = await Promise.all([getSessions(), getPresets()]);
+      const [sessionData, presets] = await Promise.all([getSessions(buildSessionFilters()), getPresets()]);
       sessions = sessionData.sort((a, b) => new Date(b.startedTime).getTime() - new Date(a.startedTime).getTime());
       presetMap = Object.fromEntries(presets.map((preset) => [preset.id, preset.name]));
     } catch (err) {
@@ -77,27 +114,22 @@
     }
   }
 
-  async function initializeMmrChart() {
+  async function refreshHistoryData() {
+    await loadSessions();
     await loadMmrPlaylists();
-    if (selectedPlaylist) {
-      await loadMmrSeries();
-    } else {
-      mmrLoading = false;
-    }
+    await loadMmrSeries();
   }
 
-  async function loadMmrPlaylists(preferredPlaylist?: string) {
+  async function loadMmrPlaylists() {
     mmrError = null;
 
     try {
-      const records = await getMmrRecords();
+      const records = await getMmrRecords(buildMmrFilters());
       const uniquePlaylists = Array.from(new Set(records.map((record) => record.playlist))).sort();
       playlists = uniquePlaylists;
-      if (preferredPlaylist && playlists.includes(preferredPlaylist)) {
-        selectedPlaylist = preferredPlaylist;
-      } else if (!selectedPlaylist && playlists.length) {
-        selectedPlaylist = playlists[0];
-      } else if (selectedPlaylist && !playlists.includes(selectedPlaylist)) {
+      const preservedSelection = selectedPlaylists.filter((playlist) => playlists.includes(playlist));
+      selectedPlaylists = preservedSelection.length ? preservedSelection : [...playlists];
+      if (!selectedPlaylist || !playlists.includes(selectedPlaylist)) {
         selectedPlaylist = playlists.length ? playlists[0] : null;
       }
     } catch (err) {
@@ -107,24 +139,36 @@
   }
 
   async function loadMmrSeries() {
-    if (!selectedPlaylist) {
+    if (!selectedPlaylists.length) {
       mmrRecords = [];
+      mmrSeriesByPlaylist = {};
       mmrLoading = false;
       return;
     }
 
     mmrLoading = true;
     mmrError = null;
-    const to = new Date();
-    const from = new Date(to);
-    from.setDate(to.getDate() - MMR_WINDOW_DAYS);
+    const filters = buildMmrFilters();
 
     try {
-      mmrRecords = await getMmrRecords({
-        playlist: selectedPlaylist,
-        from: from.toISOString(),
-        to: to.toISOString(),
+      const requests = selectedPlaylists.map((playlist) =>
+        getMmrRecords({ playlist, from: filters.from, to: filters.to })
+      );
+      const responses = await Promise.all(requests);
+      const series: Record<string, MmrRecord[]> = {};
+      responses.forEach((records, index) => {
+        series[selectedPlaylists[index]] = records;
       });
+      mmrSeriesByPlaylist = series;
+      const displayPlaylist =
+        selectedPlaylists.find((playlist) => playlist === selectedPlaylist) ?? selectedPlaylists[0];
+      if (displayPlaylist) {
+        selectedPlaylist = displayPlaylist;
+        mmrRecords = mmrSeriesByPlaylist[displayPlaylist] ?? [];
+      } else {
+        mmrRecords = [];
+        selectedPlaylist = null;
+      }
     } catch (err) {
       mmrError = err instanceof Error ? err.message : 'Unable to load MMR records';
     } finally {
@@ -164,7 +208,7 @@
       manualMmrValue = '';
       manualGamesDiff = '1';
       manualPlaylistValue = '';
-      await loadMmrPlaylists(playlistValue);
+  await loadMmrPlaylists();
       await loadMmrSeries();
     } catch (err) {
       manualError = err instanceof Error ? err.message : 'Unable to log MMR';
@@ -178,6 +222,23 @@
     manualError = null;
     manualSuccess = null;
     loadMmrSeries();
+  }
+
+  function handleDateFilterChange() {
+    if (startDate && endDate && startDate > endDate) {
+      const temp = startDate;
+      startDate = endDate;
+      endDate = temp;
+    }
+
+    void refreshHistoryData();
+  }
+
+  function handlePlaylistFiltersChange() {
+    if (!selectedPlaylists.length && playlists.length) {
+      selectedPlaylists = [...playlists];
+    }
+    void loadMmrSeries();
   }
 
   function formatDate(value: string) {
@@ -281,6 +342,40 @@
         <h2>MMR trend</h2>
         <p>Weight over time for a single playlist.</p>
       </div>
+    </div>
+
+    <div class="history-mmr-filters">
+      <label>
+        From
+        <input
+          type="date"
+          bind:value={startDate}
+          max={endDate}
+          on:change={handleDateFilterChange}
+        />
+      </label>
+      <label>
+        To
+        <input
+          type="date"
+          bind:value={endDate}
+          min={startDate}
+          on:change={handleDateFilterChange}
+        />
+      </label>
+      <label>
+        Playlists
+        <select
+          multiple
+          size={Math.min(playlists.length, 6) || 3}
+          bind:value={selectedPlaylists}
+          on:change={handlePlaylistFiltersChange}
+        >
+          {#each playlists as playlist}
+            <option value={playlist}>{playlist}</option>
+          {/each}
+        </select>
+      </label>
     </div>
 
     <form class="manual-mmr-form" on:submit|preventDefault={submitManualMmr}>
@@ -558,6 +653,35 @@
     align-items: flex-start;
     gap: 1rem;
     margin-bottom: 1rem;
+  }
+
+  .history-mmr-filters {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    margin-bottom: 1rem;
+  }
+
+  .history-mmr-filters label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .history-mmr-filters input,
+  .history-mmr-filters select {
+    padding: 0.45rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
+    background: var(--input-background, rgba(15, 23, 42, 0.9));
+    color: #fff;
+    font-size: 0.9rem;
+  }
+
+  .history-mmr-filters select {
+    min-height: 96px;
   }
 
   .history-mmr h2 {
