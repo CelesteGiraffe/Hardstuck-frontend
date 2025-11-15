@@ -6,6 +6,16 @@ import type { Skill, Preset, Session, SkillSummary, MmrRecord } from '../api';
 const FIVE_MINUTES = 5 * 60 * 1000;
 const TWO_MINUTES = 2 * 60 * 1000;
 
+type SessionFilters = { start?: string; end?: string };
+
+function fetchPresets(): Promise<Preset[]> {
+  return api.getPresets();
+}
+
+function fetchSessions(filters?: SessionFilters): Promise<Session[]> {
+  return api.getSessions(filters ?? {});
+}
+
 function fetchWeeklySkillSummary(): Promise<SkillSummary[]> {
   const to = new Date();
   const from = new Date(to);
@@ -19,13 +29,13 @@ export const skillsQuery = createResourceStore<Skill[], void>(() => api.getSkill
   label: 'skills',
 });
 
-export const presetsQuery = createResourceStore<Preset[], void>(() => api.getPresets(), {
+export const presetsQuery = createResourceStore<Preset[], void>(fetchPresets, {
   initialData: [],
   refreshIntervalMs: FIVE_MINUTES,
   label: 'presets',
 });
 
-export const sessionsQuery = createResourceStore<Session[], { start?: string; end?: string }>((params) => api.getSessions(params), {
+export const sessionsQuery = createResourceStore<Session[], SessionFilters>((params) => fetchSessions(params), {
   initialData: [],
   refreshIntervalMs: TWO_MINUTES,
   label: 'sessions',

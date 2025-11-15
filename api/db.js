@@ -53,7 +53,9 @@ db.prepare(
     finished_time TEXT,
     source TEXT NOT NULL,
     preset_id INTEGER,
-    notes TEXT
+    notes TEXT,
+    actual_duration INTEGER DEFAULT 0,
+    skill_ids TEXT
   );`
 ).run();
 
@@ -70,6 +72,21 @@ db.prepare(
   );`
 ).run();
 
+function ensureColumn(tableName, columnDefinition) {
+  const columnName = columnDefinition.split(' ')[0];
+  const existingColumns = db
+    .prepare(`PRAGMA table_info('${tableName}');`)
+    .all()
+    .map((column) => column.name);
+
+  if (!existingColumns.includes(columnName)) {
+    db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnDefinition};`).run();
+  }
+}
+
+ensureColumn('sessions', 'actual_duration INTEGER DEFAULT 0');
+ensureColumn('sessions', 'skill_ids TEXT');
+
 const selectPresetsStmt = db.prepare('SELECT id, name FROM presets ORDER BY id ASC;');
 const selectPresetByIdStmt = db.prepare('SELECT id, name FROM presets WHERE id = ?;');
 const insertPresetStmt = db.prepare('INSERT INTO presets (name) VALUES (?);');
@@ -85,7 +102,7 @@ const clearPresetBlocksStmt = db.prepare('DELETE FROM preset_blocks;');
 const clearPresetsStmt = db.prepare('DELETE FROM presets;');
 const deletePresetStmt = db.prepare('DELETE FROM presets WHERE id = ?;');
 const insertSessionStmt = db.prepare(
-  'INSERT INTO sessions (started_time, finished_time, source, preset_id, notes) VALUES (?, ?, ?, ?, ?);'
+  'INSERT INTO sessions (started_time, finished_time, source, preset_id, notes, actual_duration, skill_ids) VALUES (?, ?, ?, ?, ?, ?, ?);'
 );
 const insertSessionBlockStmt = db.prepare(
   'INSERT INTO session_blocks (session_id, block_type, skill_ids, planned_duration, actual_duration, notes) VALUES (?, ?, ?, ?, ?, ?);'
@@ -260,7 +277,11 @@ function buildSessionResponse(session) {
     skillIds: skillIdsJson ? JSON.parse(skillIdsJson) : [],
   }));
 
-  return { ...session, blocks };
+  const { skillIdsJson, ...sessionWithoutSkillIds } = session;
+  const skillIds = typeof skillIdsJson === 'string' ? JSON.parse(skillIdsJson) : [];
+  const actualDuration = sessionWithoutSkillIds.actualDuration ?? 0;
+
+  return { ...sessionWithoutSkillIds, actualDuration, skillIds, blocks };
 }
 
 function getSessions({ start, end } = {}) {
@@ -278,7 +299,7 @@ function getSessions({ start, end } = {}) {
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const query = `SELECT id, started_time AS startedTime, finished_time AS finishedTime, source, preset_id AS presetId, notes FROM sessions ${whereClause} ORDER BY started_time ASC;`;
+  const query = `SELECT id, started_time AS startedTime, finished_time AS finishedTime, source, preset_id AS presetId, notes, actual_duration AS actualDuration, skill_ids AS skillIdsJson FROM sessions ${whereClause} ORDER BY started_time ASC;`;
   const resp = db.prepare(query).all(...params);
   return resp.map(buildSessionResponse);
 }
@@ -321,11 +342,42 @@ function getSkillDurationSummary({ from, to } = {}) {
 }
 
 const saveSessionTransaction = db.transaction(({ startedTime, finishedTime, source, presetId = null, notes = null, blocks = [] }) => {
-  const info = insertSessionStmt.run(startedTime, finishedTime || null, source, presetId, notes);
+  const normalizedBlocks = Array.isArray(blocks)
+    ? blocks.map((block) => ({
+        ...block,
+        skillIds: Array.isArray(block.skillIds) ? block.skillIds : [],
+      }))
+    : [];
+
+  let totalActualDuration = 0;
+  const sessionSkillIds = [];
+  const seenSkillIds = new Set();
+
+  for (const block of normalizedBlocks) {
+    totalActualDuration += Number.isFinite(block.actualDuration) ? block.actualDuration : 0;
+
+    for (const skillId of block.skillIds) {
+      if (!seenSkillIds.has(skillId)) {
+        seenSkillIds.add(skillId);
+        sessionSkillIds.push(skillId);
+      }
+    }
+  }
+
+  const sessionSkillIdsJson = JSON.stringify(sessionSkillIds);
+  const info = insertSessionStmt.run(
+    startedTime,
+    finishedTime || null,
+    source,
+    presetId,
+    notes,
+    totalActualDuration,
+    sessionSkillIdsJson
+  );
   const sessionId = info.lastInsertRowid;
 
-  for (const block of blocks) {
-    const skillIdsJson = Array.isArray(block.skillIds) ? JSON.stringify(block.skillIds) : null;
+  for (const block of normalizedBlocks) {
+    const skillIdsJson = JSON.stringify(block.skillIds);
     insertSessionBlockStmt.run(
       sessionId,
       block.type,
@@ -336,7 +388,16 @@ const saveSessionTransaction = db.transaction(({ startedTime, finishedTime, sour
     );
   }
 
-  return buildSessionResponse({ id: sessionId, startedTime, finishedTime, source, presetId, notes });
+  return buildSessionResponse({
+    id: sessionId,
+    startedTime,
+    finishedTime,
+    source,
+    presetId,
+    notes,
+    actualDuration: totalActualDuration,
+    skillIdsJson: sessionSkillIdsJson,
+  });
 });
 
 function saveSession(session) {

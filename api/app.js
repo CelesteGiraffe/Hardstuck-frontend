@@ -129,6 +129,37 @@ app.get('/api/sessions', (req, res) => {
   res.json(sessions);
 });
 
+function normalizeSessionBlocks(blocks) {
+  if (!Array.isArray(blocks)) {
+    return [];
+  }
+
+  const isValidNumber = (value) => typeof value === 'number' && Number.isFinite(value);
+
+  return blocks.map((block) => {
+    if (
+      typeof block.type !== 'string' ||
+      !Array.isArray(block.skillIds) ||
+      !isValidNumber(block.plannedDuration) ||
+      !isValidNumber(block.actualDuration)
+    ) {
+      throw new Error('blocks must include type, skillIds array, plannedDuration, and actualDuration');
+    }
+
+    if (block.skillIds.some((skillId) => typeof skillId !== 'number' || !Number.isFinite(skillId))) {
+      throw new Error('skillIds must be an array of numbers');
+    }
+
+    return {
+      type: block.type,
+      skillIds: block.skillIds,
+      plannedDuration: block.plannedDuration,
+      actualDuration: block.actualDuration,
+      notes: block.notes ?? null,
+    };
+  });
+}
+
 app.get('/api/summary/skills', (req, res) => {
   const { from, to } = req.query;
   const summary = getSkillDurationSummary({ from, to });
@@ -136,25 +167,18 @@ app.get('/api/summary/skills', (req, res) => {
 });
 
 app.post('/api/sessions', (req, res) => {
-  const { startedTime, finishedTime, source, presetId, notes, blocks } = req.body;
+  const { startedTime, finishedTime = null, source, presetId = null, notes = null, blocks } = req.body;
 
   if (!startedTime || !source) {
     return res.status(400).json({ error: 'startedTime and source are required' });
   }
 
-  const normalizedBlocks = Array.isArray(blocks) ? blocks : [];
+  let normalizedBlocks;
 
-  for (const block of normalizedBlocks) {
-    if (
-      typeof block.type !== 'string' ||
-      typeof block.plannedDuration !== 'number' ||
-      typeof block.actualDuration !== 'number' ||
-      !Array.isArray(block.skillIds)
-    ) {
-      return res
-        .status(400)
-        .json({ error: 'blocks must include type, skillIds array, plannedDuration, and actualDuration' });
-    }
+  try {
+    normalizedBlocks = normalizeSessionBlocks(blocks);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
   }
 
   try {

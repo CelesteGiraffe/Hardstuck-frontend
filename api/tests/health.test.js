@@ -416,6 +416,9 @@ describe('sessions endpoints', () => {
 
     expect(post.statusCode).toBe(201);
     expect(post.body.blocks).toHaveLength(1);
+    expect(post.body.actualDuration).toBe(payload.blocks[0].actualDuration);
+    expect(post.body.skillIds).toEqual([]);
+    expect(post.body.notes).toBe(payload.notes);
 
     const get = await request(app).get('/api/sessions');
     expect(get.statusCode).toBe(200);
@@ -423,7 +426,44 @@ describe('sessions endpoints', () => {
       startedTime: payload.startedTime,
       source: payload.source,
     });
+    expect(get.body[0].actualDuration).toBe(payload.blocks[0].actualDuration);
+    expect(get.body[0].skillIds).toEqual([]);
+    expect(get.body[0].notes).toBe(payload.notes);
     expect(get.body[0].blocks[0].type).toBe(payload.blocks[0].type);
+  });
+
+  it('aggregates skill ids and duration across blocks', async () => {
+    const payload = {
+      startedTime: '2025-11-13T12:00:00Z',
+      source: 'quick',
+      blocks: [
+        {
+          type: 'focus',
+          skillIds: [1, 2],
+          plannedDuration: 120,
+          actualDuration: 110,
+        },
+        {
+          type: 'review',
+          skillIds: [2, 3],
+          plannedDuration: 60,
+          actualDuration: 45,
+        },
+      ],
+    };
+
+    const post = await request(app)
+      .post('/api/sessions')
+      .send(payload)
+      .set('Content-Type', 'application/json');
+
+    expect(post.statusCode).toBe(201);
+    expect(post.body.actualDuration).toBe(155);
+    expect(post.body.skillIds).toEqual([1, 2, 3]);
+
+    const get = await request(app).get('/api/sessions');
+    expect(get.body[0].skillIds).toEqual([1, 2, 3]);
+    expect(get.body[0].actualDuration).toBe(155);
   });
 
   it('filters sessions by optional start query', async () => {
@@ -459,6 +499,27 @@ describe('sessions endpoints', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({ error: 'startedTime and source are required' });
+  });
+
+  it('rejects blocks with non-numeric skill ids', async () => {
+    const response = await request(app)
+      .post('/api/sessions')
+      .send({
+        startedTime: '2025-11-13T10:00:00Z',
+        source: 'quick',
+        blocks: [
+          {
+            type: 'warmup',
+            skillIds: ['bad'],
+            plannedDuration: 60,
+            actualDuration: 60,
+          },
+        ],
+      })
+      .set('Content-Type', 'application/json');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'skillIds must be an array of numbers' });
   });
 });
 

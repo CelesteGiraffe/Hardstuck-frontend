@@ -48,6 +48,8 @@ export type Session = {
   source: string;
   presetId: number | null;
   notes: string | null;
+  actualDuration: number;
+  skillIds: number[];
   blocks: SessionBlock[];
 };
 
@@ -192,7 +194,7 @@ export type SessionPayload = {
   blocks: SessionBlockPayload[];
 };
 
-export async function createSession(payload: SessionPayload): Promise<void> {
+export async function createSession(payload: SessionPayload): Promise<Session> {
   const response = await fetch(buildUrl('/api/sessions'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -203,6 +205,8 @@ export async function createSession(payload: SessionPayload): Promise<void> {
     const error = await response.json().catch(() => ({ error: 'Unable to save session' }));
     throw new Error(error.error ?? 'Unable to save session');
   }
+
+  return (await response.json()) as Session;
 }
 
 export async function getSessions(filters: { start?: string; end?: string } = {}): Promise<Session[]> {

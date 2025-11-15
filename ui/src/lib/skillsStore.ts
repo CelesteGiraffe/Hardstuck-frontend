@@ -2,16 +2,26 @@ import { derived } from 'svelte/store';
 import type { Skill } from './api';
 import { skillsQuery } from './queries';
 
+export type SkillLookup = Record<number, Skill>;
+
 export type SkillsState = {
   skills: Skill[];
   loading: boolean;
   error: string | null;
+  lookup: SkillLookup;
 };
+
+const buildLookup = (skills: Skill[]): SkillLookup =>
+  skills.reduce<SkillLookup>((acc, skill) => {
+    acc[skill.id] = skill;
+    return acc;
+  }, {});
 
 const skillsState = derived(skillsQuery, (state) => ({
   skills: state.data,
   loading: state.loading,
   error: state.error,
+  lookup: buildLookup(state.data),
 }));
 
 const trimTag = (tag: string) => tag.trim();
@@ -36,6 +46,8 @@ export const skillTags = derived(skillsQuery, (state) => {
   }
   return Array.from(tags).sort();
 });
+
+export const skillLookup = derived(skillsState, (state) => state.lookup);
 
 export const skillsStore = {
   subscribe: skillsState.subscribe,
