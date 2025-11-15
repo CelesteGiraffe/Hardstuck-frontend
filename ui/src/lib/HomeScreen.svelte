@@ -11,6 +11,9 @@
     sessionsQuery,
     weeklySkillSummaryQuery,
   } from './queries';
+  import { pushChecklistSnapshot } from './checklistState';
+  import { pluginInstallUrl } from './constants';
+  import type { ChecklistItem } from './checklistState';
 
   let apiHealthy: boolean | null = null;
   let healthChecking = false;
@@ -45,13 +48,7 @@
   let lastMmrMeta: string | null = null;
   let cacheNote = 'Fetching fresh stats…';
 
-  const pluginInstallUrl = 'https://github.com/CelesteGiraffe/RL-Trainer-2#3-bakkesmod-plugin-c';
-  type ChecklistItem = {
-    label: string;
-    ready: boolean;
-    value: string;
-    helper: string;
-  };
+  let checklistItems: ChecklistItem[] = [];
 
   $: skillList = $skillsStore.skills;
   $: skillsLoading = $skillsStore.loading;
@@ -135,6 +132,13 @@
         : 'Log a match manually or enable the plugin',
     },
   ];
+
+  $: pushChecklistSnapshot({
+    items: checklistItems,
+    lastMmrMeta,
+    cacheNote,
+  });
+
 
   function calculateMinutesToday(currentSessions: Session[]) {
     const todayStart = new Date();
@@ -325,37 +329,6 @@
         </ul>
       {/if}
     </article>
-    <article class="dashboard-card checklist-card">
-      <div class="checklist-header">
-        <h3>Setup checklist</h3>
-        <p>See what’s left before your training stack is complete.</p>
-      </div>
-      <ul class="checklist-list">
-        {#each checklistItems as item}
-          <li class:item-ready={item.ready} class:item-missing={!item.ready}>
-            <div>
-              <span>{item.label}</span>
-              <small>{item.helper}</small>
-            </div>
-            <strong>{item.value}</strong>
-          </li>
-        {/each}
-      </ul>
-      <p class="checklist-last">
-        <span>Last MMR log:</span>
-        {#if lastMmrMeta}
-          <strong>{lastMmrMeta}</strong>
-        {:else}
-          <strong>Not recorded yet</strong>
-        {/if}
-      </p>
-      <p class="checklist-cache">{cacheNote}</p>
-      <div class="checklist-actions">
-        <a class="button-link" href={pluginInstallUrl} target="_blank" rel="noreferrer">
-          Plugin installation guide
-        </a>
-      </div>
-    </article>
   </div>
 
   <section class="glass-card quick-timer">
@@ -502,83 +475,5 @@
     padding: 0.35rem 0.85rem;
   }
 
-  .checklist-card {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(15, 23, 42, 0.9));
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-  }
 
-  .checklist-header p {
-    margin: 0.25rem 0 0;
-    font-size: 0.9rem;
-    color: var(--text-muted);
-  }
-
-  .checklist-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .checklist-list li {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    padding-bottom: 0.6rem;
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    align-items: flex-start;
-  }
-
-  .checklist-list li:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-  }
-
-  .checklist-list small {
-    display: block;
-    margin-top: 0.3rem;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .checklist-list strong {
-    font-size: 1.1rem;
-  }
-
-  .checklist-list li.item-ready strong {
-    color: var(--accent-strong);
-  }
-
-  .checklist-list li.item-missing strong {
-    color: rgba(248, 113, 113, 0.9);
-  }
-
-  .checklist-last {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.85rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .checklist-cache {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.75rem;
-  }
-
-  .checklist-actions {
-    margin-top: 0.35rem;
-  }
-
-  .button-link {
-    color: #fff;
-    text-decoration: underline;
-    font-weight: 600;
-  }
 </style>
