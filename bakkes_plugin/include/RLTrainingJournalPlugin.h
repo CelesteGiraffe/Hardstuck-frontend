@@ -1,8 +1,16 @@
 #pragma once
 
+// Include the real BakkesMod SDK headers when building on Windows (where the
+// SDK is expected to be installed). For local development on macOS or when
+// the SDK isn't available, use lightweight stubs so the editor and linter
+// won't produce include errors.
+#if defined(_WIN32) && __has_include("bakkesmod/plugin/bakkesmodplugin.h")
 #include "bakkesmod/plugin/bakkesmodplugin.h"
 #include "bakkesmod/plugin/PluginSettingsWindow.h"
 #include "bakkesmod/plugin/PluginWindow.h"
+#else
+#include "bakkesmod_stubs.h"
+#endif
 
 #include "ApiClient.h"
 
@@ -12,6 +20,10 @@
 #include <mutex>
 #include <string>
 #include <vector>
+
+// Forward declarations from the BakkesMod SDK wrappers used in method signatures.
+// Keep the header lightweight and avoid pulling in heavy wrapper headers here.
+class ServerWrapper;
 
 class RLTrainingJournalPlugin final : public BakkesMod::Plugin::BakkesModPlugin,
                                      public SettingsWindowBase,

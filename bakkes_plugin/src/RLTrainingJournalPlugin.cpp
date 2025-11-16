@@ -1,6 +1,5 @@
 #include "RLTrainingJournalPlugin.h"
 
-#include "bakkesmod/plugin/BakkesModPlugin.h"
 #include "bakkesmod/wrappers/GameWrapper.h"
 #include "bakkesmod/wrappers/ArrayWrapper.h"
 #include "bakkesmod/wrappers/CarWrapper.h"
