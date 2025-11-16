@@ -22,7 +22,7 @@
 #include <thread>
 #include <unordered_map>
 
-BAKKESMOD_PLUGIN(RLTrainingJournalPlugin, "RL Training Journal", "1.0", PERMISSION_ALL)
+BAKKESMOD_PLUGIN(RLTrainingJournalPlugin, "RL Trainer", "1.0", PERMISSION_ALL)
 
 namespace
 {
