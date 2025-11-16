@@ -77,6 +77,26 @@
     updateBlocks(next);
   }
 
+  function updateDurationMinutes(index: number, value: string) {
+    const minutesInput = Math.max(0, Math.floor(Number(value) || 0));
+    const currentSeconds = blocks[index]?.durationSeconds ?? 0;
+    const seconds = currentSeconds % 60;
+    updateBlock(index, { durationSeconds: minutesInput * 60 + seconds });
+  }
+
+  function updateDurationSeconds(index: number, value: string) {
+    let secondsInput = Math.floor(Number(value) || 0);
+    if (secondsInput > 59) {
+      secondsInput = 59;
+    }
+    if (secondsInput < 0) {
+      secondsInput = 0;
+    }
+    const currentSeconds = blocks[index]?.durationSeconds ?? 0;
+    const minutes = Math.floor(currentSeconds / 60);
+    updateBlock(index, { durationSeconds: minutes * 60 + secondsInput });
+  }
+
   function moveBlock(from: number, to: number) {
     if (from === to) {
       return;
@@ -172,18 +192,34 @@
           />
         </label>
 
-        <label>
-          <span>Duration (sec)</span>
-          <input
-            type="number"
-            min="0"
-            value={block.durationSeconds}
-            on:input={(event) =>
-              updateBlock(index, { durationSeconds: Number(event.currentTarget.value) || 0 })
-            }
-            disabled={disabled}
-          />
-        </label>
+        <div class="duration-group">
+          <span>Duration</span>
+          <div class="duration-inputs">
+            <label>
+              <span>Minutes</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={Math.floor(block.durationSeconds / 60)}
+                on:input={(event) => updateDurationMinutes(index, event.currentTarget.value)}
+                disabled={disabled}
+              />
+            </label>
+            <label>
+              <span>Seconds</span>
+              <input
+                type="number"
+                min="0"
+                max="59"
+                step="1"
+                value={block.durationSeconds % 60}
+                on:input={(event) => updateDurationSeconds(index, event.currentTarget.value)}
+                disabled={disabled}
+              />
+            </label>
+          </div>
+        </div>
 
         <label>
           <span>Notes</span>
@@ -265,6 +301,23 @@
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
+  }
+
+  .duration-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .duration-inputs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+
+  .duration-inputs label {
+    flex: 1;
+    min-width: 110px;
   }
 
   input,

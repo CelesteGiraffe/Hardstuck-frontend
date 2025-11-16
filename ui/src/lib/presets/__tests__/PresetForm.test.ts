@@ -41,8 +41,9 @@ describe('PresetForm', () => {
     await waitFor(() => expect(submitButton.hasAttribute('disabled')).toBe(false))
 
     await fireEvent.input(getByLabelText(/Preset name/i), { target: { value: '  Focus routine' } })
-    await fireEvent.input(getByLabelText(/Block type/i), { target: { value: '  Drill  ' } })
-    await fireEvent.input(getByLabelText(/Duration \(sec\)/i), { target: { value: '120' } })
+  await fireEvent.input(getByLabelText(/Block type/i), { target: { value: '  Drill  ' } })
+  await fireEvent.input(getByLabelText(/Minutes/i), { target: { value: '2' } })
+  await fireEvent.input(getByLabelText(/Seconds/i), { target: { value: '0' } })
 
     const form = container.querySelector('form')
     expect(form).toBeTruthy()

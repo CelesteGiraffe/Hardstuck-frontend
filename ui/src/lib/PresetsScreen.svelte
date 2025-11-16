@@ -122,6 +122,22 @@
     detailMessage = null;
     launchPreset(selectedPreset);
   }
+
+  function formatPresetDuration(seconds: number | null | undefined) {
+    const totalSeconds = Math.max(0, Math.floor(seconds ?? 0));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const remainingSeconds = totalSeconds % 60;
+    const parts: string[] = [];
+    if (hours) {
+      parts.push(`${hours}h`);
+    }
+    if (minutes) {
+      parts.push(`${minutes}min`);
+    }
+    parts.push(`${remainingSeconds}s`);
+    return parts.join(' ');
+  }
 </script>
 
 <section class="screen-content presets-shell">
@@ -225,7 +241,7 @@
                     <p class="block-type">{block.type}</p>
                     <p class="block-skill">{skillLookup[block.skillId] ?? `Skill ${block.skillId}`}</p>
                   </div>
-                  <span class="block-duration">{block.durationSeconds} sec</span>
+                  <span class="block-duration">{formatPresetDuration(block.durationSeconds)}</span>
                 </div>
                 {#if block.notes}
                   <p class="block-notes">{block.notes}</p>
