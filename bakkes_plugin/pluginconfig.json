@@ -1,0 +1,11 @@
+{
+  "plugins": [
+    {
+      "name": "RL Training Journal",
+      "class": "RLTrainingJournalPlugin",
+      "file": "RLTrainingJournalPlugin.dll",
+      "description": "Uploads ranked match data and scoreboard stats to the RL Training Journal API.",
+      "version": "1.0.0"
+    }
+  ]
+}

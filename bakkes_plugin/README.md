@@ -77,3 +77,41 @@ The API validates field presence/format and returns `400` errors like `"shader m
 ## Next Steps
 1. Build the plugin inside this folder, referencing the API contract above. You can copy `api/README.md` features (skills/presets) if your plugin needs to manipulate training data.
 2. When ready, integrate plugin UI telemetry with the training dashboard by posting to `/api/mmr-log` and optionally calling `/api/v1/bakkes/favorites` so the UI stays in sync.
+
+## RL Training Journal Plugin
+
+This repository now includes a ready-to-build BakkesMod plugin that automates the match logging flow outlined above.
+
+### Features
+
+- Hooks into the `GameEvent_Soccar` match-end events and replay recordings to capture the final scoreboard for every online match.
+- Collects each player's goals, assists, saves, shots, final score, and team index plus the team scores so the UI's training dashboard can reconstruct the match context.
+- Reads the local MMR from `MMRWrapper` for the playlist associated with the match and submits it as `mmr` along with the configured `gamesPlayedDiff`.
+- Sends JSON payloads to `/api/mmr-log` using the Windows WinHTTP stack so the Express API receives the same data the Svelte UI expects.
+- Adds in-game diagnostics (ImGui window + `rtj_force_upload` notifier) so you can inspect the last API response and manually resend the most recent payload while testing.
+
+### Configuration
+
+The plugin exposes three console CVars:
+
+| CVar | Default | Description |
+| --- | --- | --- |
+| `rtj_api_base_url` | `http://localhost:4000` | Points to the Express API that powers the UI. |
+| `rtj_user_id` | `test-player` | Sent as `X-User-Id` so `/api/v1/bakkes/favorites` can associate favorites with the correct player. |
+| `rtj_games_played_increment` | `1` | Controls the `gamesPlayedDiff` field in the payload. |
+
+The `rtj_force_upload` notifier pushes whatever match data is currently cached (for example, right after a game ends) without waiting for the next event trigger.
+
+### Building
+
+1. Install the [BakkesMod Plugin SDK](https://bakkesmodwiki.com/wiki/BakkesModSDK) and set the `BAKKESMODSDK` environment variable to the SDK root.
+2. From this folder run:
+
+   ```bash
+   cmake -S . -B build
+   cmake --build build --config Release
+   ```
+
+3. Copy `build/Release/RLTrainingJournalPlugin.dll` (plus `pluginconfig.json`) into `BakkesMod/plugins` and enable it inside the in-game plugin manager.
+
+The plugin uses standard WinHTTP for networking, so no additional dependencies are required beyond the SDK and the Windows toolchain.
