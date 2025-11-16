@@ -100,6 +100,13 @@ Assumptions
 - The API server is running locally on port 4000 (or use the `PORT` environment variable).
 - The plugin can retry failed requests if it receives a 400–level response, since the error message explains what’s wrong.
 
+### Favorites sync
+
+- Each Bakkes user keeps a list of favorites tracked by the server in the `bakkes_favorites` SQLite table (see `api/db.js`).
+- The web API exposes those favorites via `GET /api/v1/bakkes/favorites` so the plugin or UI can consume them.
+- The route requires the `X-User-Id` header so the server can return the favorites belonging to that user only.
+- The response is a JSON array of `{ name, code }` objects (empty if the user has no favorites yet).
+
 ### Analytics
 - Time spent per skill (bar charts).
 - Overall training volume over time.

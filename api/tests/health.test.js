@@ -11,6 +11,7 @@ beforeEach(() => {
   db.clearTrainingGoals();
   db.clearSkills();
   db.clearProfileSettings();
+  db.clearFavorites();
 });
 
 describe('GET /api/health', () => {

@@ -663,53 +663,6 @@
     gap: 1.5rem;
   }
 
-  .hero-profile {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: var(--card-radius);
-    align-self: flex-start;
-  }
-
-  .profile-link {
-    width: fit-content;
-    display: inline-flex;
-    border-radius: 50%;
-    overflow: hidden;
-  }
-
-  .profile-avatar {
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid rgba(255, 255, 255, 0.2);
-  }
-
-  .profile-greeting {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .rank-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    font-size: 0.85rem;
-    color: var(--text-muted);
-  }
-
-  .rank-icon {
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    object-fit: cover;
-  }
-
   .hero-intro .stat-badges {
     margin-top: 1rem;
   }

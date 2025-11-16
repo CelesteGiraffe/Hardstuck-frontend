@@ -1,4 +1,5 @@
 const express = require('express');
+const db = require('./db');
 const {
   saveMmrLog,
   getAllMmrLogs,
@@ -18,7 +19,7 @@ const {
   saveTrainingGoal,
   deleteTrainingGoal,
   getGoalProgress,
-} = require('./db');
+} = db;
 
 const app = express();
 
@@ -26,6 +27,21 @@ app.use(express.json());
 
 app.get('/api/health', (_, res) => {
   res.json({ ok: true });
+});
+
+app.get('/api/v1/bakkes/favorites', (req, res) => {
+  const userId = (req.header('x-user-id') || '').trim();
+
+  if (!userId) {
+    return res.status(401).json({ error: 'X-User-Id header is required' });
+  }
+
+  try {
+    const favorites = db.getFavoritesByUser(userId);
+    res.json(favorites);
+  } catch (error) {
+    res.status(500).json({ error: 'Unable to load favorites' });
+  }
 });
 
 app.post('/api/mmr-log', (req, res) => {

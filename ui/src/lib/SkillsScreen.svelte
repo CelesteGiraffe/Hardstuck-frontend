@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { createSkill, deleteSkill, updateSkill } from './api';
-  import type { Skill } from './api';
+  import { onMount } from 'svelte';
+  import { createSkill, deleteSkill, updateSkill, getBakkesFavorites } from './api';
+  import type { BakkesFavorite, Skill } from './api';
   import { useSkills } from './useSkills';
   import { skillTags } from './skillsStore';
+  import { getBakkesUserId } from './constants';
 
   let name = '';
   let category = '';
@@ -10,6 +12,23 @@
   let notes = '';
   let saving = false;
   let formError: string | null = null;
+
+  let favorites: BakkesFavorite[] = [];
+  let favoritesLoading = true;
+  let favoritesError: string | null = null;
+  let selectedFavoriteCode = '';
+
+    onMount(async () => {
+      favoritesLoading = true;
+      favoritesError = null;
+      try {
+        favorites = await getBakkesFavorites(getBakkesUserId());
+      } catch (error) {
+        favoritesError = error instanceof Error ? error.message : 'Unable to load favorites';
+      } finally {
+        favoritesLoading = false;
+      }
+    });
 
   let editingSkillId: number | null = null;
   let editForm = { name: '', category: '', tags: '', notes: '' };
@@ -56,11 +75,13 @@
         category: category.trim() || undefined,
         notes: notes.trim() || undefined,
         tags: normalizeTags(tags),
+        favoriteCode: selectedFavoriteCode || undefined,
       });
       name = '';
       category = '';
       tags = '';
       notes = '';
+      selectedFavoriteCode = '';
       await skillsStore.refresh();
     } catch (err) {
       formError = err instanceof Error ? err.message : 'Failed to save skill';
@@ -248,6 +269,33 @@
       Notes
       <textarea rows="3" bind:value={notes} placeholder="Optional notes about this skill"></textarea>
     </label>
+    <label>
+      Bakkes favorite
+      {#if favoritesLoading}
+        <select disabled>
+          <option>Loading favorites…</option>
+        </select>
+      {:else if favoritesError}
+        <select disabled>
+          <option>{favoritesError}</option>
+        </select>
+      {:else if favorites.length === 0}
+        <select disabled>
+          <option>No favorites yet</option>
+        </select>
+      {:else}
+          <select bind:value={selectedFavoriteCode} data-testid="favorites-select">
+          <option value="">Do not associate a favorite</option>
+          {#each favorites as favorite}
+            <option value={favorite.code}>{favorite.name}</option>
+          {/each}
+        </select>
+      {/if}
+    </label>
+    <input type="hidden" data-testid="favorite-code-input" bind:value={selectedFavoriteCode} />
+    {#if favoritesError}
+      <p class="form-error">{favoritesError}</p>
+    {/if}
     {#if formError}
       <p class="form-error">{formError}</p>
     {/if}

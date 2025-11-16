@@ -6,6 +6,7 @@
   import SkillsScreen from './lib/SkillsScreen.svelte';
   import ProfileScreen from './lib/ProfileScreen.svelte';
 
+  import type { MmrRecord } from './lib/api';
   import { apiOfflineMessage, mmrLogQuery } from './lib/queries';
   import OfflineBanner from './lib/components/OfflineBanner.svelte';
   import { activeScreenId, navigateTo, clearSelectedPreset } from './lib/stores';

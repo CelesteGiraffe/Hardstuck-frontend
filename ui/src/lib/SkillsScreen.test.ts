@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, waitFor } from '@testing-library/svelte'
+import { fireEvent, render, waitFor, within } from '@testing-library/svelte'
 import * as api from './api'
 import SkillsScreen from './SkillsScreen.svelte'
 import { resetSkillsCacheForTests } from './useSkills'
@@ -13,6 +13,8 @@ describe('SkillsScreen', () => {
   beforeEach(() => {
     resetSkillsCacheForTests()
     vi.restoreAllMocks()
+    const env = import.meta.env as ImportMetaEnv & Record<string, string | undefined>
+    env.VITE_BAKKES_USER_ID = 'test-player'
   })
 
   it('updates a skill and refreshes the shared store', async () => {
@@ -48,5 +50,48 @@ describe('SkillsScreen', () => {
 
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(skills[0].id))
     expect(refreshSpy).toHaveBeenCalled()
+  })
+
+  it('submits the selected favorite when adding a skill', async () => {
+    vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
+    const favorites = [
+      { name: 'Boost Play', code: 'AAA-111' },
+      { name: 'Aerial Drill', code: 'BBB-222' },
+    ]
+    const favoritesSpy = vi.spyOn(api, 'getBakkesFavorites').mockResolvedValue(favorites)
+    const createSpy = vi.spyOn(api, 'createSkill').mockResolvedValue(skills[0])
+    const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockResolvedValue(skills)
+
+  const { container } = render(SkillsScreen)
+
+    await waitFor(() => expect(favoritesSpy).toHaveBeenCalled())
+    const getSelect = () => within(container).getByTestId('favorites-select') as HTMLSelectElement
+    await waitFor(() => expect(getSelect().disabled).toBeFalsy())
+
+  const form = getSelect().closest('form')
+    if (!form) {
+      throw new Error('Favorites dropdown should be inside the skill form')
+    }
+  const formHelpers = within(form)
+    const nameInput = formHelpers.getByLabelText('Name')
+  const favoriteCodeInput = formHelpers.getByTestId('favorite-code-input') as HTMLInputElement
+  await fireEvent.input(favoriteCodeInput, { target: { value: favorites[1].code } })
+    await fireEvent.input(nameInput, { target: { value: 'Boost Note' } })
+  await fireEvent.submit(form)
+
+    await waitFor(() => expect(createSpy).toHaveBeenCalled())
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ favoriteCode: favorites[1].code })
+    )
+    expect(refreshSpy).toHaveBeenCalled()
+  })
+
+  it('shows a message when favorites fail to load', async () => {
+    vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
+    vi.spyOn(api, 'getBakkesFavorites').mockRejectedValue(new Error('boom'))
+
+    const { getByText } = render(SkillsScreen)
+
+    await waitFor(() => expect(getByText('boom')).toBeInTheDocument())
   })
 })

@@ -16,6 +16,16 @@ db.prepare(
 ).run();
 
 db.prepare(
+  `CREATE TABLE IF NOT EXISTS bakkes_favorites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    code TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );`
+).run();
+
+db.prepare(
   `CREATE TABLE IF NOT EXISTS skills (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -202,6 +212,9 @@ const selectStmt = db.prepare(
   'SELECT id, timestamp, playlist, mmr, games_played_diff AS gamesPlayedDiff, source FROM mmr_logs ORDER BY timestamp ASC;'
 );
 const clearStmt = db.prepare('DELETE FROM mmr_logs;');
+const selectFavoritesByUserStmt = db.prepare('SELECT name, code FROM bakkes_favorites WHERE user_id = ? ORDER BY id ASC;');
+const insertFavoriteStmt = db.prepare('INSERT INTO bakkes_favorites (user_id, name, code) VALUES (?, ?, ?);');
+const clearFavoritesStmt = db.prepare('DELETE FROM bakkes_favorites;');
 
 function saveMmrLog({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakkes' }) {
   insertStmt.run(timestamp, playlist, mmr, gamesPlayedDiff, source || 'bakkes');
@@ -253,6 +266,34 @@ function getMmrLogs({ playlist, from, to } = {}) {
 
 function clearMmrLogs() {
   clearStmt.run();
+}
+
+function getFavoritesByUser(userId) {
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('userId is required');
+  }
+
+  return selectFavoritesByUserStmt.all(userId);
+}
+
+function addFavoriteForUser({ userId, name, code }) {
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('userId is required');
+  }
+
+  if (!name || typeof name !== 'string') {
+    throw new Error('name is required');
+  }
+
+  if (!code || typeof code !== 'string') {
+    throw new Error('code is required');
+  }
+
+  insertFavoriteStmt.run(userId, name, code);
+}
+
+function clearFavorites() {
+  clearFavoritesStmt.run();
 }
 
 function getAllSkills() {
@@ -689,6 +730,9 @@ module.exports = {
   getAllMmrLogs,
   getMmrLogs,
   clearMmrLogs,
+  getFavoritesByUser,
+  addFavoriteForUser,
+  clearFavorites,
   getAllSkills,
   upsertSkill,
   deleteSkill,

@@ -29,6 +29,7 @@ export type SkillPayload = {
   category?: string | null;
   tags?: string | null;
   notes?: string | null;
+  favoriteCode?: string | null;
 };
 
 export type SessionBlock = {
@@ -116,6 +117,11 @@ export type PresetPayload = {
   id?: number;
   name: string;
   blocks: PresetBlockPayload[];
+};
+
+export type BakkesFavorite = {
+  name: string;
+  code: string;
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
@@ -262,6 +268,19 @@ export async function getSkillSummary({ from, to }: { from?: string; to?: string
   }
 
   return (await response.json()) as SkillSummary[];
+}
+
+export async function getBakkesFavorites(userId: string): Promise<BakkesFavorite[]> {
+  const response = await fetch(buildUrl('/api/v1/bakkes/favorites'), {
+    headers: { 'X-User-Id': userId },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to load favorites');
+  }
+
+  return (await response.json()) as BakkesFavorite[];
 }
 
 async function postSkill(payload: SkillPayload): Promise<Skill> {

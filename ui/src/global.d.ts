@@ -6,6 +6,7 @@ declare module '*.svelte' {
 
 interface ImportMetaEnv {
   VITE_API_BASE?: string
+  VITE_BAKKES_USER_ID?: string
   [key: string]: string | undefined
 }
 
