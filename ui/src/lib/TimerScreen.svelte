@@ -3,6 +3,7 @@
   import { selectedPreset, clearSelectedPreset } from './stores';
   import { createSession } from './api';
   import { sessionsQuery, weeklySkillSummaryQuery } from './queries';
+  import { profileStore } from './profileStore';
   import type { Preset, PresetBlock, SessionBlockPayload, SessionPayload } from './api';
 
   const formatDuration = (seconds = 0) => {
@@ -342,11 +343,12 @@
     saveSuccess = null;
 
     try {
-  await createSession(createSessionPayload());
-  saveSuccess = 'Session saved!';
-  await Promise.all([sessionsQuery.refresh(), weeklySkillSummaryQuery.refresh()]);
-  resetTimerState();
-  clearSelectedPreset();
+      await createSession(createSessionPayload());
+      saveSuccess = 'Session saved!';
+      await Promise.all([sessionsQuery.refresh(), weeklySkillSummaryQuery.refresh()]);
+      await profileStore.refresh();
+      resetTimerState();
+      clearSelectedPreset();
     } catch (error) {
       saveError = error instanceof Error ? error.message : 'Unable to save session';
     } finally {

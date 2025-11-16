@@ -1,11 +1,30 @@
 <script lang="ts">
   import type { GoalProgress, TrainingGoal } from '../api';
+  import {
+    formatGoalEtaLabel,
+    formatGoalPercentLabel,
+    getGoalCompletionPercent,
+    getGoalDueDate,
+    getGoalRemainingMinutes,
+  } from '../formatters/goalProgress';
 
   export let goal: TrainingGoal;
   export let progress: GoalProgress | null = null;
   export let skillName: string | null = null;
   export let onEdit: () => void = () => {};
   export let onDelete: () => void = () => {};
+
+  let completionPercent: number | null = null;
+  let remainingMinutes: number | null = null;
+  let percentLabel = '—';
+  let etaLabel: string | null = null;
+  let dueDate: Date | null = null;
+
+  $: completionPercent = getGoalCompletionPercent(goal, progress);
+  $: percentLabel = formatGoalPercentLabel(completionPercent);
+  $: remainingMinutes = getGoalRemainingMinutes(goal, progress);
+  $: etaLabel = formatGoalEtaLabel(goal, progress);
+  $: dueDate = getGoalDueDate(goal, progress);
 </script>
 
 <article class="goal-card">
@@ -47,6 +66,30 @@
       <p>Sessions</p>
       <strong>{progress?.actualSessions ?? 0}</strong>
     </div>
+  </div>
+
+  <div class="goal-progress-summary">
+    <div
+      class="goal-progress-bar"
+      role="progressbar"
+      aria-valuenow={completionPercent ?? 0}
+      aria-valuemin="0"
+      aria-valuemax="100"
+    >
+      <span class="goal-progress-fill" style={`width: ${Math.max(0, completionPercent ?? 0)}%`}></span>
+    </div>
+    <div class="goal-progress-meta">
+      <span class="goal-progress-percent">{percentLabel} complete</span>
+      {#if remainingMinutes !== null}
+        <span class="goal-progress-remaining">{remainingMinutes} min remaining</span>
+      {/if}
+      {#if etaLabel}
+        <span class="goal-progress-due">{etaLabel}</span>
+      {/if}
+    </div>
+    {#if dueDate}
+      <p class="goal-progress-due-date">Due by {dueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</p>
+    {/if}
   </div>
 </article>
 
@@ -144,6 +187,53 @@
   .goal-progress small {
     color: var(--text-muted);
     font-size: 0.75rem;
+  }
+
+  .goal-progress-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .goal-progress-bar {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    height: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .goal-progress-fill {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #22d3ee, #6366f1);
+    border-radius: inherit;
+    transition: width 0.3s ease;
+  }
+
+  .goal-progress-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .goal-progress-percent {
+    font-weight: 600;
+    color: inherit;
+  }
+
+  .goal-progress-remaining,
+  .goal-progress-due {
+    color: var(--text-muted);
+  }
+
+  .goal-progress-due-date {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
   }
 
   @media (max-width: 640px) {

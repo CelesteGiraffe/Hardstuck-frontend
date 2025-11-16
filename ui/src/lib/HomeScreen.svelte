@@ -1,8 +1,17 @@
 <script lang="ts">
   import { healthCheck, createSession } from './api';
-  import type { Preset, Skill, Session, SkillSummary, MmrRecord } from './api';
+  import type {
+    GoalProgress,
+    Preset,
+    Skill,
+    Session,
+    SkillSummary,
+    MmrRecord,
+    TrainingGoal,
+  } from './api';
   import { launchPreset } from './stores';
   import { useSkills } from './useSkills';
+  import { profileStore } from './profileStore';
   import {
     apiOfflineMessage,
     isApiOffline,
@@ -14,6 +23,12 @@
   import { pushChecklistSnapshot } from './checklistState';
   import { pluginInstallUrl } from './constants';
   import type { ChecklistItem } from './checklistState';
+  import {
+    formatGoalEtaLabel,
+    formatGoalPercentLabel,
+    getGoalCompletionPercent,
+    getGoalRemainingMinutes,
+  } from './formatters/goalProgress';
 
   let apiHealthy: boolean | null = null;
   let healthChecking = false;
@@ -56,6 +71,20 @@
   let apiStatusMessage: string | null = null;
 
   let checklistItems: ChecklistItem[] = [];
+
+  const profileGoalsStore = profileStore.goals;
+  const profileProgressStore = profileStore.progressMap;
+
+  type GoalTrackEntry = {
+    goal: TrainingGoal;
+    progress: GoalProgress | null;
+    percent: number | null;
+    remainingMinutes: number | null;
+    etaLabel: string | null;
+  };
+
+  let trackEntries: GoalTrackEntry[] = [];
+  let visibleTrackEntries: GoalTrackEntry[] = [];
 
   $: skillList = $skillsStore.skills;
   $: skillsLoading = $skillsStore.loading;
@@ -159,6 +188,28 @@
     : 'Unhealthy';
   $: apiStatusMessage =
     healthError ?? $apiOfflineMessage ?? (apiHealthy ? 'API is online' : 'Waiting for syncing');
+
+  $: trackEntries = $profileGoalsStore.map((goal) => {
+    const progress = $profileProgressStore[goal.id] ?? null;
+    return {
+      goal,
+      progress,
+      percent: getGoalCompletionPercent(goal, progress),
+      remainingMinutes: getGoalRemainingMinutes(goal, progress),
+      etaLabel: formatGoalEtaLabel(goal, progress),
+    };
+  });
+
+  $: visibleTrackEntries = (() => {
+    if (trackEntries.length === 0) {
+      return [];
+    }
+    const active = trackEntries.filter((entry) => (entry.percent ?? 0) < 100);
+    if (active.length) {
+      return active.slice(0, 2);
+    }
+    return trackEntries.slice(0, 2);
+  })();
 
 
   function calculateMinutesToday(currentSessions: Session[]) {
@@ -326,6 +377,52 @@
       </div>
     </section>
 
+    <section class="home-card glass-card track-progress">
+      <div class="section-header">
+        <h2>Track progress</h2>
+        <p>See how your current goals are advancing without leaving the dashboard.</p>
+      </div>
+      {#if visibleTrackEntries.length > 0}
+        <div class="track-list">
+          {#each visibleTrackEntries as entry (entry.goal.id)}
+            <article class="track-row">
+              <header class="track-row-header">
+                <div>
+                  <p class="track-row-label">{entry.goal.label}</p>
+                  <p class="track-row-meta">
+                    {entry.progress?.actualMinutes ?? 0}m tracked · {entry.goal.periodDays}d window
+                  </p>
+                </div>
+                <span class="track-row-percent">{formatGoalPercentLabel(entry.percent)}</span>
+              </header>
+              <div
+                class="track-row-bar"
+                role="progressbar"
+                aria-valuenow={entry.percent ?? 0}
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <span
+                  class="track-row-fill"
+                  style={`width: ${Math.min(100, Math.max(0, entry.percent ?? 0))}%`}
+                ></span>
+              </div>
+              <div class="track-row-details">
+                {#if entry.remainingMinutes !== null}
+                  <span>{entry.remainingMinutes} min left</span>
+                {/if}
+                {#if entry.etaLabel}
+                  <span>{entry.etaLabel}</span>
+                {/if}
+              </div>
+            </article>
+          {/each}
+        </div>
+      {:else}
+        <p class="track-empty">Add goals on the Profile screen and log sessions to populate this update.</p>
+      {/if}
+    </section>
+
     <section class="home-card glass-card quick-timer">
       <div class="section-header">
         <h2>Quick timer</h2>
@@ -452,3 +549,87 @@
     {/if}
   </section>
 </section>
+
+<style>
+  .track-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    background: var(--bg-panel-strong);
+    border-radius: var(--card-radius);
+    padding: 1.25rem;
+  }
+
+  .track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .track-row {
+    border: 1px solid var(--border-soft);
+    border-radius: var(--card-radius);
+    padding: 0.9rem;
+    background: rgba(255, 255, 255, 0.02);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .track-row-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .track-row-label {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .track-row-meta {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .track-row-percent {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #22d3ee;
+  }
+
+  .track-row-bar {
+    background: rgba(255, 255, 255, 0.1);
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .track-row-fill {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #22d3ee, #6366f1);
+    border-radius: inherit;
+  }
+
+  .track-row-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .track-empty {
+    margin: 0;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 640px) {
+    .track-progress {
+      padding: 1rem;
+    }
+  }
+</style>
