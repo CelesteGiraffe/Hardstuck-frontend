@@ -7,8 +7,10 @@ const app = require('../app');
 beforeEach(() => {
   db.clearMmrLogs();
   db.clearPresetTables();
-  db.clearSkills();
   db.clearSessionTables();
+  db.clearTrainingGoals();
+  db.clearSkills();
+  db.clearProfileSettings();
 });
 
 describe('GET /api/health', () => {

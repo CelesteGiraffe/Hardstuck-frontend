@@ -12,6 +12,12 @@ const {
   getSessions,
   saveSession,
   getSkillDurationSummary,
+  getProfile,
+  updateProfile,
+  getTrainingGoals,
+  saveTrainingGoal,
+  deleteTrainingGoal,
+  getGoalProgress,
 } = require('./db');
 
 const app = express();
@@ -181,6 +187,112 @@ app.get('/api/summary/skills', (req, res) => {
   const { from, to } = req.query;
   const summary = getSkillDurationSummary({ from, to });
   res.json(summary);
+});
+
+app.get('/api/profile', (_, res) => {
+  const settings = getProfile();
+  const goals = getTrainingGoals();
+  const progress = goals
+    .map((goal) => {
+      const periodDays = Number(goal.periodDays) || 0;
+      const to = new Date().toISOString();
+      const from = periodDays > 0 ? new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString() : null;
+      return getGoalProgress({ goalId: goal.id, from, to })[0];
+    })
+    .filter(Boolean);
+
+  res.json({ settings, goals, progress });
+});
+
+app.put('/api/profile/settings', (req, res) => {
+  const { name, avatarUrl, timezone, defaultWeeklyTargetMinutes } = req.body;
+  const errors = [];
+
+  if (!name || typeof name !== 'string' || name.trim().length === 0) {
+    errors.push('name is required');
+  }
+
+  if (!timezone || typeof timezone !== 'string' || timezone.trim().length === 0) {
+    errors.push('timezone is required');
+  }
+
+  if (avatarUrl !== undefined && typeof avatarUrl !== 'string') {
+    errors.push('avatarUrl must be a string');
+  }
+
+  const minutes = Number(defaultWeeklyTargetMinutes);
+  if (!Number.isFinite(minutes) || minutes < 0) {
+    errors.push('defaultWeeklyTargetMinutes must be a non-negative number');
+  }
+
+  if (errors.length) {
+    return res.status(400).json({ error: errors.join('. ') });
+  }
+
+  const existing = getProfile();
+  const updated = updateProfile({
+    name: name.trim(),
+    avatarUrl: avatarUrl !== undefined ? avatarUrl.trim() : existing.avatarUrl,
+    timezone: timezone.trim(),
+    defaultWeeklyTargetMinutes: Math.floor(minutes),
+  });
+
+  res.json(updated);
+});
+
+app.post('/api/profile/goals', (req, res) => {
+  try {
+    const goal = saveTrainingGoal({
+      id: req.body.id,
+      label: req.body.label,
+      goalType: req.body.goalType,
+      skillId: req.body.skillId,
+      targetMinutes: req.body.targetMinutes,
+      targetSessions: req.body.targetSessions,
+      periodDays: req.body.periodDays,
+      notes: req.body.notes,
+    });
+
+    const status = req.body.id ? 200 : 201;
+    res.status(status).json(goal);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/profile/goals/:id', (req, res) => {
+  const goalId = Number(req.params.id);
+
+  if (!Number.isInteger(goalId) || goalId <= 0) {
+    return res.status(400).json({ error: 'invalid goal id' });
+  }
+
+  try {
+    deleteTrainingGoal(goalId);
+    res.status(204).end();
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/profile/goals/progress', (req, res) => {
+  const { goalId, from, to } = req.query;
+
+  if (!goalId) {
+    return res.status(400).json({ error: 'goalId is required' });
+  }
+
+  const parsedGoalId = Number(goalId);
+  if (!Number.isInteger(parsedGoalId) || parsedGoalId <= 0) {
+    return res.status(400).json({ error: 'invalid goalId' });
+  }
+
+  const progress = getGoalProgress({ goalId: parsedGoalId, from, to });
+  if (!progress.length) {
+    return res.status(404).json({ error: 'goal not found' });
+  }
+
+  res.json(progress[0]);
 });
 
 app.post('/api/sessions', (req, res) => {

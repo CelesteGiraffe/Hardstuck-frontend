@@ -72,6 +72,30 @@ db.prepare(
   );`
 ).run();
 
+db.prepare(
+  `CREATE TABLE IF NOT EXISTS profile_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    name TEXT NOT NULL DEFAULT '',
+    avatar_url TEXT NOT NULL DEFAULT '',
+    timezone TEXT NOT NULL DEFAULT '',
+    default_weekly_target_minutes INTEGER NOT NULL DEFAULT 0
+  );`
+).run();
+
+db.prepare(
+  `CREATE TABLE IF NOT EXISTS training_goals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    goal_type TEXT NOT NULL CHECK (goal_type IN ('global', 'skill')),
+    skill_id INTEGER,
+    target_minutes INTEGER,
+    target_sessions INTEGER,
+    period_days INTEGER NOT NULL,
+    notes TEXT,
+    FOREIGN KEY (skill_id) REFERENCES skills (id)
+  );`
+).run();
+
 function ensureColumn(tableName, columnDefinition) {
   const columnName = columnDefinition.split(' ')[0];
   const existingColumns = db
@@ -112,6 +136,32 @@ const selectSessionBlocksStmt = db.prepare(
 );
 const clearSessionBlocksStmt = db.prepare('DELETE FROM session_blocks;');
 const clearSessionsStmt = db.prepare('DELETE FROM sessions;');
+
+const selectProfileStmt = db.prepare(
+  'SELECT id, name, avatar_url AS avatarUrl, timezone, default_weekly_target_minutes AS defaultWeeklyTargetMinutes FROM profile_settings LIMIT 1;'
+);
+const insertProfileStmt = db.prepare(
+  'INSERT INTO profile_settings (id, name, avatar_url, timezone, default_weekly_target_minutes) VALUES (1, ?, ?, ?, ?);'
+);
+const updateProfileStmt = db.prepare(
+  'UPDATE profile_settings SET name = ?, avatar_url = ?, timezone = ?, default_weekly_target_minutes = ? WHERE id = 1;'
+);
+const clearProfileSettingsStmt = db.prepare('DELETE FROM profile_settings;');
+
+const selectTrainingGoalsStmt = db.prepare(
+  'SELECT id, label, goal_type AS goalType, skill_id AS skillId, target_minutes AS targetMinutes, target_sessions AS targetSessions, period_days AS periodDays, notes FROM training_goals ORDER BY id ASC;'
+);
+const selectTrainingGoalByIdStmt = db.prepare(
+  'SELECT id, label, goal_type AS goalType, skill_id AS skillId, target_minutes AS targetMinutes, target_sessions AS targetSessions, period_days AS periodDays, notes FROM training_goals WHERE id = ?;'
+);
+const insertTrainingGoalStmt = db.prepare(
+  'INSERT INTO training_goals (label, goal_type, skill_id, target_minutes, target_sessions, period_days, notes) VALUES (?, ?, ?, ?, ?, ?, ?);'
+);
+const updateTrainingGoalStmt = db.prepare(
+  'UPDATE training_goals SET label = ?, goal_type = ?, skill_id = ?, target_minutes = ?, target_sessions = ?, period_days = ?, notes = ? WHERE id = ?;'
+);
+const deleteTrainingGoalStmt = db.prepare('DELETE FROM training_goals WHERE id = ?;');
+const clearTrainingGoalsStmt = db.prepare('DELETE FROM training_goals;');
 
 const selectSkillsStmt = db.prepare(
   'SELECT id, name, category, tags, notes FROM skills ORDER BY id ASC;'
@@ -451,6 +501,189 @@ function clearSessionTables() {
   clearSessionsStmt.run();
 }
 
+function ensureProfileSettingsRow() {
+  const existing = selectProfileStmt.get();
+  if (!existing) {
+    insertProfileStmt.run('', '', '', 0);
+  }
+}
+
+function getProfile() {
+  ensureProfileSettingsRow();
+  return selectProfileStmt.get();
+}
+
+function updateProfile({ name, avatarUrl = '', timezone, defaultWeeklyTargetMinutes }) {
+  ensureProfileSettingsRow();
+  updateProfileStmt.run(name, avatarUrl, timezone, defaultWeeklyTargetMinutes);
+  return selectProfileStmt.get();
+}
+
+function normalizeGoalNumber(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getTrainingGoals() {
+  return selectTrainingGoalsStmt.all();
+}
+
+function saveTrainingGoal({
+  id,
+  label,
+  goalType,
+  skillId = null,
+  targetMinutes = null,
+  targetSessions = null,
+  periodDays,
+  notes = null,
+}) {
+  if (!label || typeof label !== 'string') {
+    throw new Error('label is required');
+  }
+
+  if (!['global', 'skill'].includes(goalType)) {
+    throw new Error("goalType must be 'global' or 'skill'");
+  }
+
+  const normalizedPeriodDays = Number(periodDays);
+  if (!Number.isInteger(normalizedPeriodDays) || normalizedPeriodDays <= 0) {
+    throw new Error('periodDays must be a positive integer');
+  }
+
+  let normalizedSkillId = null;
+  if (goalType === 'skill') {
+    if (!Number.isInteger(Number(skillId)) || Number(skillId) <= 0) {
+      throw new Error('skillId is required for skill goals');
+    }
+    normalizedSkillId = Number(skillId);
+  }
+
+  const normalizedTargetMinutes = normalizeGoalNumber(targetMinutes);
+  const normalizedTargetSessions = normalizeGoalNumber(targetSessions);
+  const notesValue = typeof notes === 'string' ? notes : null;
+
+  if (id) {
+    updateTrainingGoalStmt.run(
+      label,
+      goalType,
+      normalizedSkillId,
+      normalizedTargetMinutes,
+      normalizedTargetSessions,
+      normalizedPeriodDays,
+      notesValue,
+      id
+    );
+    return selectTrainingGoalByIdStmt.get(id);
+  }
+
+  const info = insertTrainingGoalStmt.run(
+    label,
+    goalType,
+    normalizedSkillId,
+    normalizedTargetMinutes,
+    normalizedTargetSessions,
+    normalizedPeriodDays,
+    notesValue
+  );
+  return selectTrainingGoalByIdStmt.get(info.lastInsertRowid);
+}
+
+function deleteTrainingGoal(id) {
+  if (!Number.isInteger(Number(id)) || Number(id) <= 0) {
+    throw new Error('Invalid goal id');
+  }
+
+  deleteTrainingGoalStmt.run(id);
+}
+
+function buildTimeFilters({ from, to } = {}) {
+  const conditions = [];
+  const params = [];
+
+  if (from) {
+    conditions.push('s.started_time >= ?');
+    params.push(from);
+  }
+
+  if (to) {
+    conditions.push('s.started_time <= ?');
+    params.push(to);
+  }
+
+  return { conditions, params };
+}
+
+function formatProgress(goal, row, { from = null, to = null } = {}) {
+  const totalSeconds = Number(row?.totalSeconds ?? 0);
+  const totalSessions = Number(row?.totalSessions ?? 0);
+
+  return {
+    goalId: goal.id,
+    actualSeconds: totalSeconds,
+    actualMinutes: Math.round(totalSeconds / 60),
+    actualSessions: totalSessions,
+    periodFrom: from || null,
+    periodTo: to || null,
+  };
+}
+
+function computeGoalProgress(goal, { from, to } = {}) {
+  const time = buildTimeFilters({ from, to });
+
+  if (goal.goalType === 'skill') {
+    const conditions = ['skill.value = ?', ...time.conditions];
+    const params = [goal.skillId, ...time.params];
+    const query = `
+      SELECT
+        COUNT(DISTINCT s.id) AS totalSessions,
+        COALESCE(SUM(sb.actual_duration), 0) AS totalSeconds
+      FROM session_blocks sb
+      JOIN sessions s ON s.id = sb.session_id
+      JOIN json_each(sb.skill_ids) AS skill
+      WHERE ${conditions.join(' AND ')}
+    `;
+
+    const row = db.prepare(query).get(...params);
+    return formatProgress(goal, row, { from, to });
+  }
+
+  const whereClause = time.conditions.length ? `WHERE ${time.conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT
+      COUNT(*) AS totalSessions,
+      COALESCE(SUM(actual_duration), 0) AS totalSeconds
+    FROM sessions s
+    ${whereClause}
+  `;
+  const row = db.prepare(query).get(...time.params);
+  return formatProgress(goal, row, { from, to });
+}
+
+function getGoalProgress({ goalId, from, to } = {}) {
+  const goals = getTrainingGoals();
+  const filtered = Number.isInteger(Number(goalId))
+    ? goals.filter((goal) => goal.id === Number(goalId))
+    : goals;
+
+  return filtered.map((goal) => computeGoalProgress(goal, { from, to }));
+}
+
+function clearProfileSettings() {
+  clearProfileSettingsStmt.run();
+  ensureProfileSettingsRow();
+}
+
+function clearTrainingGoals() {
+  clearTrainingGoalsStmt.run();
+}
+
+ensureProfileSettingsRow();
+
 module.exports = {
   saveMmrLog,
   getAllMmrLogs,
@@ -468,4 +701,12 @@ module.exports = {
   saveSession,
   clearSessionTables,
   getSkillDurationSummary,
+  getProfile,
+  updateProfile,
+  getTrainingGoals,
+  saveTrainingGoal,
+  deleteTrainingGoal,
+  getGoalProgress,
+  clearProfileSettings,
+  clearTrainingGoals,
 };
