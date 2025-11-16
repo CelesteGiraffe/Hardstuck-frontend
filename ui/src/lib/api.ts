@@ -59,6 +59,34 @@ export type SkillSummary = {
   minutes: number;
 };
 
+export type ProfileSettings = {
+  id: number;
+  name: string;
+  avatarUrl: string;
+  timezone: string;
+  defaultWeeklyTargetMinutes: number;
+};
+
+export type TrainingGoal = {
+  id: number;
+  label: string;
+  goalType: 'global' | 'skill';
+  skillId: number | null;
+  targetMinutes: number | null;
+  targetSessions: number | null;
+  periodDays: number;
+  notes: string | null;
+};
+
+export type GoalProgress = {
+  goalId: number;
+  actualSeconds: number;
+  actualMinutes: number;
+  actualSessions: number;
+  periodFrom: string | null;
+  periodTo: string | null;
+};
+
 export type PresetBlock = {
   id: number;
   presetId: number;
@@ -272,4 +300,97 @@ export async function deleteSkill(id: number): Promise<void> {
     const error = await response.json().catch(() => null);
     throw new Error(error?.error || 'Unable to delete skill');
   }
+}
+
+export type ProfilePayload = {
+  settings: ProfileSettings;
+  goals: TrainingGoal[];
+  progress: GoalProgress[];
+};
+
+export type ProfileSettingsPayload = {
+  name: string;
+  avatarUrl?: string;
+  timezone: string;
+  defaultWeeklyTargetMinutes: number;
+};
+
+export type TrainingGoalPayload = {
+  id?: number;
+  label: string;
+  goalType: 'global' | 'skill';
+  skillId?: number | null;
+  targetMinutes?: number | null;
+  targetSessions?: number | null;
+  periodDays: number;
+  notes?: string | null;
+};
+
+export async function getProfile(): Promise<ProfilePayload> {
+  const response = await fetch(buildUrl('/api/profile'));
+
+  if (!response.ok) {
+    throw new Error('Unable to load profile');
+  }
+
+  return (await response.json()) as ProfilePayload;
+}
+
+export async function updateProfileSettings(payload: ProfileSettingsPayload): Promise<ProfileSettings> {
+  const response = await fetch(buildUrl('/api/profile/settings'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error || 'Unable to update profile settings');
+  }
+
+  return (await response.json()) as ProfileSettings;
+}
+
+export async function saveGoal(payload: TrainingGoalPayload): Promise<TrainingGoal> {
+  const response = await fetch(buildUrl('/api/profile/goals'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error || 'Unable to save goal');
+  }
+
+  return (await response.json()) as TrainingGoal;
+}
+
+export async function deleteGoal(id: number): Promise<void> {
+  const response = await fetch(buildUrl(`/api/profile/goals/${id}`), {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error || 'Unable to delete goal');
+  }
+}
+
+export async function getGoalProgress(
+  goalId: number,
+  params?: { from?: string; to?: string }
+): Promise<GoalProgress> {
+  const searchParams = new URLSearchParams({ goalId: String(goalId) });
+  if (params?.from) searchParams.set('from', params.from);
+  if (params?.to) searchParams.set('to', params.to);
+
+  const response = await fetch(buildUrl(`/api/profile/goals/progress?${searchParams}`));
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error || 'Unable to load goal progress');
+  }
+
+  return (await response.json()) as GoalProgress;
 }
