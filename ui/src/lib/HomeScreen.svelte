@@ -3,6 +3,7 @@
   import type {
     GoalProgress,
     Preset,
+    ProfileSettings,
     Skill,
     Session,
     SkillSummary,
@@ -71,6 +72,14 @@
   let apiStatusMessage: string | null = null;
 
   let checklistItems: ChecklistItem[] = [];
+
+  const profileSettingsStore = profileStore.settings;
+  let weeklyTargetMinutes = dailyGoalMinutes;
+  let profileSettings: ProfileSettings | null = null;
+  let profileDisplayName = 'Trainer';
+  let profileAvatarUrl = '/default.png';
+  let rankLabel = 'Rank pending';
+  let rankImageSrc = '/default.png';
 
   const profileGoalsStore = profileStore.goals;
   const profileProgressStore = profileStore.progressMap;
@@ -188,6 +197,17 @@
     : 'Unhealthy';
   $: apiStatusMessage =
     healthError ?? $apiOfflineMessage ?? (apiHealthy ? 'API is online' : 'Waiting for syncing');
+
+  $: weeklyTargetMinutes = $profileSettingsStore.defaultWeeklyTargetMinutes || dailyGoalMinutes;
+  $: profileSettings = $profileSettingsStore;
+  $: profileDisplayName = profileSettings?.name?.trim() || 'Trainer';
+  $: profileAvatarUrl = profileSettings?.avatarUrl?.trim() || '/default.png';
+  $: rankLabel = lastMmrRecord
+    ? `${lastMmrRecord.playlist ?? 'Rank'} · ${lastMmrRecord.mmr ?? '—'} MMR`
+    : 'Rank pending';
+  $: rankImageSrc = lastMmrRecord
+    ? `/rank-${String(lastMmrRecord.playlist ?? 'default').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`
+    : '/default.png';
 
   $: trackEntries = $profileGoalsStore.map((goal) => {
     const progress = $profileProgressStore[goal.id] ?? null;
@@ -313,40 +333,44 @@
       healthChecking = false;
     }
   }
-</script>
+  </script>
 
 <section class="screen-content home-shell">
   <div class="home-grid">
     <section class="home-card glass-card hero-summary">
-      <div class="section-header">
-        <p class="hero-accent">Rocket League training journal</p>
-        <h1 class="glow-heading">Home</h1>
-        <p>
-          Track presets, log quick skills, and compare your minutes to ranked results, all with a neon
-          dashboard that scales from mobile to desktop.
-        </p>
-      </div>
-      <div class="stat-badges">
-        <div class="stat-badge">
-          <div class="stat-label">Minutes trained today</div>
-          <div class="stat-value">{totalMinutesToday}</div>
-          <div class="stat-progress">
-            <span class="stat-progress-fill" style={`width: ${minutesProgress}%`}></span>
+      <div class="hero-top">
+        <div class="hero-intro">
+          <div class="section-header">
+            <p class="hero-accent">Rocket League training journal</p>
+            <h1 class="glow-heading">Home</h1>
+            <p>
+              Track presets, log quick skills, and compare your minutes to ranked results, all with a neon
+              dashboard that scales from mobile to desktop.
+            </p>
           </div>
-          <small>{minutesProgress >= 100 ? 'Goal reached!' : `Goal: ${dailyGoalMinutes} min`}</small>
-        </div>
-        <div class="stat-badge">
-          <div class="stat-label">Top skill focus</div>
-          {#if topSkillFocus}
-            <div class="stat-value">{topSkillFocus.name}</div>
-            <p class="stat-subtext">{topSkillFocus.minutes} min · last 7 days</p>
-          {:else}
-            <div class="stat-value">No focus yet</div>
-            <p class="stat-subtext">Log a block to spotlight a skill</p>
-          {/if}
+          <div class="stat-badges">
+            <div class="stat-badge">
+              <div class="stat-label">Minutes trained today</div>
+              <div class="stat-value">{totalMinutesToday}</div>
+              <div class="stat-progress">
+                <span class="stat-progress-fill" style={`width: ${minutesProgress}%`}></span>
+              </div>
+              <small>{minutesProgress >= 100 ? 'Goal reached!' : `Weekly target: ${weeklyTargetMinutes} min`}</small>
+            </div>
+            <div class="stat-badge">
+              <div class="stat-label">Top skill focus</div>
+              {#if topSkillFocus}
+                <div class="stat-value">{topSkillFocus.name}</div>
+                <p class="stat-subtext">{topSkillFocus.minutes} min · last 7 days</p>
+              {:else}
+                <div class="stat-value">No focus yet</div>
+                <p class="stat-subtext">Log a block to spotlight a skill</p>
+              {/if}
+            </div>
+          </div>
+          <p class="cache-note">{cacheNote}</p>
         </div>
       </div>
-      <p class="cache-note">{cacheNote}</p>
       <div class="cta-row" role="region" aria-labelledby="api-health-heading">
         <div>
           <p id="api-health-heading" class="cta-title">API health</p>
@@ -630,6 +654,69 @@
   @media (max-width: 640px) {
     .track-progress {
       padding: 1rem;
+    }
+  }
+
+  .hero-top {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) 1fr;
+    gap: 1.5rem;
+  }
+
+  .hero-profile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: var(--card-radius);
+    align-self: flex-start;
+  }
+
+  .profile-link {
+    width: fit-content;
+    display: inline-flex;
+    border-radius: 50%;
+    overflow: hidden;
+  }
+
+  .profile-avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .profile-greeting {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .rank-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .rank-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    object-fit: cover;
+  }
+
+  .hero-intro .stat-badges {
+    margin-top: 1rem;
+  }
+
+  @media (max-width: 900px) {
+    .hero-top {
+      grid-template-columns: 1fr;
     }
   }
 </style>

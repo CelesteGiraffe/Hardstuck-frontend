@@ -6,11 +6,12 @@
   import SkillsScreen from './lib/SkillsScreen.svelte';
   import ProfileScreen from './lib/ProfileScreen.svelte';
 
-  import { apiOfflineMessage } from './lib/queries';
+  import { apiOfflineMessage, mmrLogQuery } from './lib/queries';
   import OfflineBanner from './lib/components/OfflineBanner.svelte';
   import { activeScreenId, navigateTo, clearSelectedPreset } from './lib/stores';
   import { setupChecklistState } from './lib/checklistState';
   import { pluginInstallUrl } from './lib/constants';
+  import { profileStore } from './lib/profileStore';
 
   type Screen = {
     id: 'home' | 'presetRunner' | 'skills' | 'presets' | 'history' | 'profile';
@@ -39,20 +40,62 @@
   $: if ($activeScreenId !== 'presetRunner') {
     clearSelectedPreset();
   }
+
+  const profileSettingsStore = profileStore.settings;
+  let profileDisplayName = 'Trainer';
+  let profileAvatarUrl = '/default.png';
+  let lastMmrRecord: MmrRecord | null = null;
+  let rankLabel = 'Rank pending';
+  let rankImageSrc = '/default.png';
+
+  $: profileDisplayName = $profileSettingsStore.name?.trim() || 'Trainer';
+  $: profileAvatarUrl = $profileSettingsStore.avatarUrl?.trim() || '/default.png';
+  $: {
+    const records = $mmrLogQuery.data;
+    const chronologically = [...records].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    lastMmrRecord = chronologically[chronologically.length - 1] ?? null;
+  }
+  $: rankLabel = lastMmrRecord
+    ? `${lastMmrRecord.playlist ?? 'Rank'} · ${lastMmrRecord.mmr ?? '—'} MMR`
+    : 'Rank pending';
+  $: rankImageSrc = lastMmrRecord
+    ? `/rank-${String(lastMmrRecord.playlist ?? 'default').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`
+    : '/ranks/norank.png';
 </script>
 
 <div class="app-shell">
   <header class="app-header">
-    <div class="header-heading">
-      <div class="project-title-row">
-        <h1 class="project-title">{projectTitle}</h1>
-        <span class="status-chip">{activeScreenLabel}</span>
+    <div class="header-top">
+      <div class="header-heading">
+        <div class="project-title-row">
+          <h1 class="project-title">{projectTitle}</h1>
+          <span class="status-chip">{activeScreenLabel}</span>
+        </div>
+        <p class="breadcrumb">
+          <span>Dashboard</span>
+          <span aria-hidden="true">/</span>
+          <span>{activeScreenLabel}</span>
+        </p>
       </div>
-      <p class="breadcrumb">
-        <span>Dashboard</span>
-        <span aria-hidden="true">/</span>
-        <span>{activeScreenLabel}</span>
-      </p>
+      <div class="header-profile">
+        <div class="profile-meta">
+          <p class="profile-name">Hey {profileDisplayName}</p>
+          <div class="rank-row">
+            <img class="rank-icon" src={rankImageSrc} alt={`Rank badge: ${rankLabel}`} loading="lazy" />
+            <span>{rankLabel}</span>
+          </div>
+        </div>
+        <a
+          class="profile-link"
+          href="/profile"
+          aria-label="Go to profile"
+          on:click|preventDefault={() => navigateTo('profile')}
+        >
+          <img class="profile-avatar" src={profileAvatarUrl} alt={`Avatar for ${profileDisplayName}`} loading="lazy" />
+        </a>
+      </div>
     </div>
     <OfflineBanner message={$apiOfflineMessage} />
   </header>
@@ -135,3 +178,81 @@
     <svelte:component this={ActiveScreen} />
   </main>
 </div>
+
+<style>
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+  }
+
+  .header-heading {
+    flex: 1;
+  }
+
+  .header-profile {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--card-radius);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .profile-link {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: inline-flex;
+    overflow: hidden;
+  }
+
+  .profile-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+
+  .profile-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    flex: 1;
+  }
+
+  .profile-name {
+    margin: 0;
+    font-size: 0.8rem;
+  }
+
+  .rank-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .rank-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    object-fit: cover;
+  }
+
+  @media (max-width: 720px) {
+    .header-top {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .header-profile {
+      width: 100%;
+      justify-content: flex-start;
+    }
+  }
+</style>
