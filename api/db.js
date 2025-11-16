@@ -125,6 +125,24 @@ const insertSkillStmt = db.prepare(
 const updateSkillStmt = db.prepare(
   'UPDATE skills SET name = ?, category = ?, tags = ?, notes = ? WHERE id = ?;'
 );
+const selectPresetUsageStmt = db.prepare('SELECT COUNT(*) AS count FROM preset_blocks WHERE skill_id = ?;');
+const selectSessionBlocksUsageStmt = db.prepare(
+  `SELECT COUNT(*) AS count
+  FROM session_blocks
+  JOIN json_each(session_blocks.skill_ids) AS skill
+  WHERE skill.value = ?
+    AND session_blocks.skill_ids IS NOT NULL
+    AND json_valid(session_blocks.skill_ids)`
+);
+const selectSessionsUsageStmt = db.prepare(
+  `SELECT COUNT(*) AS count
+  FROM sessions
+  JOIN json_each(sessions.skill_ids) AS skill
+  WHERE skill.value = ?
+    AND sessions.skill_ids IS NOT NULL
+    AND json_valid(sessions.skill_ids)`
+);
+const deleteSkillStmt = db.prepare('DELETE FROM skills WHERE id = ?;');
 const clearSkillsStmt = db.prepare('DELETE FROM skills;');
 
 const insertStmt = db.prepare(
@@ -203,6 +221,26 @@ function upsertSkill({ id, name, category = null, tags = null, notes = null }) {
 
   const info = insertSkillStmt.run(name, category, tags, notes);
   return selectSkillByIdStmt.get(info.lastInsertRowid);
+}
+
+function getSkillReferenceCount(skillId) {
+  const presetUsage = selectPresetUsageStmt.get(skillId)?.count ?? 0;
+  const sessionBlocksUsage = selectSessionBlocksUsageStmt.get(skillId)?.count ?? 0;
+  const sessionUsage = selectSessionsUsageStmt.get(skillId)?.count ?? 0;
+  return presetUsage + sessionBlocksUsage + sessionUsage;
+}
+
+function deleteSkill(id) {
+  if (!id) {
+    throw new Error('skill id is required');
+  }
+
+  const references = getSkillReferenceCount(id);
+  if (references > 0) {
+    throw new Error('Skill is referenced by existing presets or sessions');
+  }
+
+  deleteSkillStmt.run(id);
 }
 
 function clearSkills() {
@@ -420,6 +458,7 @@ module.exports = {
   clearMmrLogs,
   getAllSkills,
   upsertSkill,
+  deleteSkill,
   clearSkills,
   getAllPresets,
   savePreset,

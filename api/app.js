@@ -5,6 +5,7 @@ const {
   getMmrLogs,
   getAllSkills,
   upsertSkill,
+  deleteSkill,
   getAllPresets,
   savePreset,
   deletePreset,
@@ -74,6 +75,22 @@ app.post('/api/skills', (req, res) => {
 
   const skill = upsertSkill({ id, name, category, tags, notes });
   res.status(201).json(skill);
+});
+
+app.delete('/api/skills/:id', (req, res) => {
+  const skillId = Number(req.params.id);
+
+  if (!Number.isInteger(skillId) || skillId <= 0) {
+    return res.status(400).json({ error: 'invalid skill id' });
+  }
+
+  try {
+    deleteSkill(skillId);
+    res.status(204).end();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to delete skill';
+    res.status(400).json({ error: message });
+  }
 });
 
 app.get('/api/presets', (_, res) => {

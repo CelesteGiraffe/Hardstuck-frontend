@@ -243,6 +243,81 @@ describe('skills endpoints', () => {
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({ error: 'name is required' });
   });
+
+  it('deletes a skill when no presets or sessions reference it', async () => {
+    const skill = await request(app)
+      .post('/api/skills')
+      .send({ name: 'Transient' })
+      .set('Content-Type', 'application/json');
+
+    const deleted = await request(app).delete(`/api/skills/${skill.body.id}`);
+    expect(deleted.statusCode).toBe(204);
+
+    const get = await request(app).get('/api/skills');
+    expect(get.statusCode).toBe(200);
+    expect(get.body).toEqual([]);
+  });
+
+  it('prevents deleting a skill while it exists in a preset and allows removal after the preset is deleted', async () => {
+    const skill = await request(app)
+      .post('/api/skills')
+      .send({ name: 'Preset blocker' })
+      .set('Content-Type', 'application/json');
+
+    const presetPayload = {
+      name: 'Blocking preset',
+      blocks: [
+        {
+          orderIndex: 1,
+          skillId: skill.body.id,
+          type: 'focus',
+          durationSeconds: 60,
+        },
+      ],
+    };
+
+    const createdPreset = await request(app)
+      .post('/api/presets')
+      .send(presetPayload)
+      .set('Content-Type', 'application/json');
+
+    const blocked = await request(app).delete(`/api/skills/${skill.body.id}`);
+    expect(blocked.statusCode).toBe(400);
+    expect(blocked.body).toEqual({ error: 'Skill is referenced by existing presets or sessions' });
+
+    const deletedPreset = await request(app).delete(`/api/presets/${createdPreset.body.id}`);
+    expect(deletedPreset.statusCode).toBe(204);
+
+    const deletedSkill = await request(app).delete(`/api/skills/${skill.body.id}`);
+    expect(deletedSkill.statusCode).toBe(204);
+  });
+
+  it('prevents deleting a skill used in session blocks', async () => {
+    const skill = await request(app)
+      .post('/api/skills')
+      .send({ name: 'Session blocker' })
+      .set('Content-Type', 'application/json');
+
+    await request(app)
+      .post('/api/sessions')
+      .send({
+        startedTime: '2025-11-13T10:00:00Z',
+        source: 'testing',
+        blocks: [
+          {
+            type: 'review',
+            skillIds: [skill.body.id],
+            plannedDuration: 120,
+            actualDuration: 120,
+          },
+        ],
+      })
+      .set('Content-Type', 'application/json');
+
+    const blocked = await request(app).delete(`/api/skills/${skill.body.id}`);
+    expect(blocked.statusCode).toBe(400);
+    expect(blocked.body).toEqual({ error: 'Skill is referenced by existing presets or sessions' });
+  });
 });
 
 describe('presets endpoints', () => {

@@ -153,7 +153,27 @@
           <h2>Saved routines</h2>
           <p>Tap a preset to preview its blocks below.</p>
         </div>
-        <button type="button" class="button-neon" on:click={openNewPresetForm}>New preset</button>
+        <div class="list-header-actions">
+          <button
+            type="button"
+            class="icon-button run-icon button-soft"
+            on:click={runPreset}
+            disabled={!selectedPreset}
+            aria-label="Run selected preset"
+          >
+            <span aria-hidden="true">▶</span>
+            <span class="sr-only">Run selected</span>
+          </button>
+          <button
+            type="button"
+            class="icon-button neon-icon button-neon"
+            on:click={openNewPresetForm}
+            aria-label="Create new preset"
+          >
+            <span aria-hidden="true">＋</span>
+            <span class="sr-only">New preset</span>
+          </button>
+        </div>
       </div>
 
       {#if loading}
@@ -272,6 +292,61 @@
     display: grid;
     grid-template-columns: minmax(260px, 1fr) minmax(420px, 2fr);
     gap: 1.5rem;
+  }
+
+  .list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .list-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .icon-button {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(15, 23, 42, 0.8);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: #fff;
+    transition: border-color 0.2s ease, background 0.2s ease;
+    padding: 0;
+  }
+
+  .icon-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .button-soft.run-icon {
+    border-color: rgba(99, 102, 241, 0.6);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.25);
+  }
+
+  .button-neon.neon-icon {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .preset-list ul {
