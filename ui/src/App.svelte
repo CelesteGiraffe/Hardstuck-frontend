@@ -4,6 +4,7 @@
   import TimerScreen from './lib/TimerScreen.svelte';
   import HistoryScreen from './lib/HistoryScreen.svelte';
   import SkillsScreen from './lib/SkillsScreen.svelte';
+  import ProfileScreen from './lib/ProfileScreen.svelte';
 
   import { apiOfflineMessage } from './lib/queries';
   import OfflineBanner from './lib/components/OfflineBanner.svelte';
@@ -12,7 +13,7 @@
   import { pluginInstallUrl } from './lib/constants';
 
   type Screen = {
-    id: 'home' | 'presetRunner' | 'skills' | 'presets' | 'history';
+    id: 'home' | 'presetRunner' | 'skills' | 'presets' | 'history' | 'profile';
     label: string;
     component: typeof HomeScreen;
   };
@@ -23,6 +24,7 @@
     { id: 'skills', label: 'Skills', component: SkillsScreen },
     { id: 'presets', label: 'Presets', component: PresetsScreen },
     { id: 'history', label: 'History', component: HistoryScreen },
+    { id: 'profile', label: 'Profile', component: ProfileScreen },
   ];
 
   const projectTitle = 'RL Trainer 2';

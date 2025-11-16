@@ -293,6 +293,10 @@ body {
   justify-content: center;
 }
 
+.screen-content.profile-screen {
+  justify-content: center;
+}
+
 @media (max-width: 640px) {
   .app-header {
     flex-direction: column;
