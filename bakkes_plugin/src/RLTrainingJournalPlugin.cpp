@@ -602,101 +602,100 @@ void RLTrainingJournalPlugin::RenderSettings()
 
     if (!cvarManager)
     {
-        ImGui::TextWrapped("CVar manager unavailable; settings UI cannot function.");
-        return;
-    }
-
-    ImGui::TextUnformatted("Configure where Rocket League Training Journal uploads are sent.");
-    if (!uiEnabled_)
-    {
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 128, 0, 255));
-        ImGui::TextWrapped("Note: Overlay rendering is disabled via rtj_ui_enabled.");
-        ImGui::PopStyleColor();
-        ImGui::Separator();
-    }
-
-    static char baseUrlBuf[256] = {0};
-    static char userIdBuf[128] = {0};
-    static std::string cachedBaseUrl;
-    static std::string cachedUserId;
-
-    const std::string cvarBase = cvarManager->getCvar(kBaseUrlCvarName).getStringValue();
-    const std::string cvarUser = cvarManager->getCvar(kUserIdCvarName).getStringValue();
-
-    if (cachedBaseUrl != cvarBase)
-    {
-        std::strncpy(baseUrlBuf, cvarBase.c_str(), sizeof(baseUrlBuf) - 1);
-        baseUrlBuf[sizeof(baseUrlBuf) - 1] = '\0';
-        cachedBaseUrl = cvarBase;
-    }
-
-    if (cachedUserId != cvarUser)
-    {
-        std::strncpy(userIdBuf, cvarUser.c_str(), sizeof(userIdBuf) - 1);
-        userIdBuf[sizeof(userIdBuf) - 1] = '\0';
-        cachedUserId = cvarUser;
-    }
-
-    bool localhostToggle = forceLocalhost_;
-    if (ImGui::Checkbox("Send data to localhost (default)", &localhostToggle))
-    {
-        cvarManager->getCvar(kForceLocalhostCvarName).setValue(localhostToggle ? "1" : "0");
-        forceLocalhost_ = localhostToggle;
-    }
-    ImGui::SameLine();
-    ImGui::TextWrapped("Uncheck to enter a remote IP/host.");
-
-    if (localhostToggle)
-    {
-        ImGui::TextWrapped("API Base URL: %s", baseUrlBuf);
-        ImGui::TextWrapped("(Locked to localhost while the checkbox is enabled.)");
-    }
-    else
-    {
-        ImGui::InputText("API Base URL", baseUrlBuf, sizeof(baseUrlBuf));
-        ImGui::SameLine();
-        if (ImGui::Button("Save URL"))
+        if (!cvarManager)
         {
-            ApplyBaseUrl(baseUrlBuf);
-            cachedBaseUrl = baseUrlBuf;
-            cvarManager->log("RTJ: saved API base URL");
+            ImGui::TextWrapped("CVar manager unavailable; settings UI cannot function.");
+            ImGui::End();
+            return;
         }
-    }
 
-    ImGui::InputText("User ID (X-User-Id)", userIdBuf, sizeof(userIdBuf));
-    ImGui::SameLine();
-    if (ImGui::Button("Save User ID"))
-    {
-        cvarManager->getCvar(kUserIdCvarName).setValue(std::string(userIdBuf));
-        cachedUserId = userIdBuf;
-        cvarManager->log("RTJ: saved user id");
-    }
+        ImGui::TextUnformatted("Configure where Rocket League Training Journal uploads are sent.");
 
-    ImGui::Spacing();
-    ImGui::TextWrapped("Quick helpers:");
-    if (ImGui::Button("Use localhost:4000"))
-    {
-        ApplyBaseUrl(kDefaultBaseUrl);
-        std::strncpy(baseUrlBuf, kDefaultBaseUrl, sizeof(baseUrlBuf) - 1);
-        baseUrlBuf[sizeof(baseUrlBuf) - 1] = '\0';
-        cachedBaseUrl = kDefaultBaseUrl;
-        cvarManager->getCvar(kForceLocalhostCvarName).setValue("1");
-        forceLocalhost_ = true;
-        localhostToggle = true;
-    }
-    ImGui::SameLine();
-    ImGui::TextWrapped("Use when the training app runs on the same PC.");
+        static char baseUrlBuf[256] = {0};
+        static char userIdBuf[128] = {0};
+        static std::string cachedBaseUrl;
+        static std::string cachedUserId;
 
-    ImGui::Spacing();
-    if (ImGui::Button("Gather && Upload Now"))
-    {
-        TriggerManualUpload();
-    }
-    ImGui::SameLine();
-    ImGui::TextWrapped("Captures the active match/replay and immediately syncs it.");
+        const std::string cvarBase = cvarManager->getCvar(kBaseUrlCvarName).getStringValue();
+        const std::string cvarUser = cvarManager->getCvar(kUserIdCvarName).getStringValue();
 
-    ImGui::Spacing();
-    ImGui::TextWrapped("Tip: Set the API URL to the LAN IP of the machine running the training app (for example: http://192.168.1.236:4000) when streaming data across devices.");
+        if (cachedBaseUrl != cvarBase)
+        {
+            std::strncpy(baseUrlBuf, cvarBase.c_str(), sizeof(baseUrlBuf) - 1);
+            baseUrlBuf[sizeof(baseUrlBuf) - 1] = '\0';
+            cachedBaseUrl = cvarBase;
+        }
+
+        if (cachedUserId != cvarUser)
+        {
+            std::strncpy(userIdBuf, cvarUser.c_str(), sizeof(userIdBuf) - 1);
+            userIdBuf[sizeof(userIdBuf) - 1] = '\0';
+            cachedUserId = cvarUser;
+        }
+
+        bool localhostToggle = forceLocalhost_;
+        if (ImGui::Checkbox("Send data to localhost (default)", &localhostToggle))
+        {
+            cvarManager->getCvar(kForceLocalhostCvarName).setValue(localhostToggle ? "1" : "0");
+            forceLocalhost_ = localhostToggle;
+        }
+        ImGui::SameLine();
+        ImGui::TextWrapped("Uncheck to enter a remote IP/host.");
+
+        if (localhostToggle)
+        {
+            ImGui::TextWrapped("API Base URL: %s", baseUrlBuf);
+            ImGui::TextWrapped("(Locked to localhost while the checkbox is enabled.)");
+        }
+        else
+        {
+            ImGui::InputText("API Base URL", baseUrlBuf, sizeof(baseUrlBuf));
+            ImGui::SameLine();
+            if (ImGui::Button("Save URL"))
+            {
+                ApplyBaseUrl(baseUrlBuf);
+                cachedBaseUrl = baseUrlBuf;
+                cvarManager->log("RTJ: saved API base URL");
+            }
+        }
+
+        ImGui::InputText("User ID (X-User-Id)", userIdBuf, sizeof(userIdBuf));
+        ImGui::SameLine();
+        if (ImGui::Button("Save User ID"))
+        {
+            cvarManager->getCvar(kUserIdCvarName).setValue(std::string(userIdBuf));
+            cachedUserId = userIdBuf;
+            cvarManager->log("RTJ: saved user id");
+        }
+
+        ImGui::Spacing();
+        ImGui::TextWrapped("Quick helpers:");
+        if (ImGui::Button("Use localhost:4000"))
+        {
+            ApplyBaseUrl(kDefaultBaseUrl);
+            std::strncpy(baseUrlBuf, kDefaultBaseUrl, sizeof(baseUrlBuf) - 1);
+            baseUrlBuf[sizeof(baseUrlBuf) - 1] = '\0';
+            cachedBaseUrl = kDefaultBaseUrl;
+            cvarManager->getCvar(kForceLocalhostCvarName).setValue("1");
+            forceLocalhost_ = true;
+            localhostToggle = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextWrapped("Use when the training app runs on the same PC.");
+
+        ImGui::Spacing();
+        if (ImGui::Button("Gather && Upload Now"))
+        {
+            TriggerManualUpload();
+        }
+        ImGui::SameLine();
+        ImGui::TextWrapped("Captures the active match/replay and immediately syncs it.");
+
+        ImGui::Spacing();
+        ImGui::TextWrapped("Tip: Set the API URL to the LAN IP of the machine running the training app (for example: http://192.168.1.236:4000) when streaming data across devices.");
+
+    }
+    ImGui::End();
 }
 
 std::string RLTrainingJournalPlugin::GetPluginName()
