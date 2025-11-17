@@ -1,3 +1,8 @@
+/bakkes_plugin/third_party/
+
+# Crash debug reports (local, uncommitted)
+/bakkes_plugin/crashdebug_reports/
+!/bakkes_plugin/crashdebug_reports/.gitkeep
 *instructions.md
 
 # Node artifacts
@@ -77,3 +82,6 @@ generate.stamp
 
 # Keep a tiny deploy folder in bakkes_plugin (tracked) for test artifacts
 !/bakkes_plugin/deploy/
+
+# Third-party folders that developers should fetch locally (do not commit)
+/bakkes_plugin/third_party/

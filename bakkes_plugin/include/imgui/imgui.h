@@ -1,15 +1,11 @@
-// Minimal ImGui stub for local development.
+/*
+	Local ImGui stub removed — this project requires Dear ImGui to be present
+	in `bakkes_plugin/third_party/imgui` (uncommitted). Use the provided helper
+	script to fetch it:
+
+		pwsh .\bakkes_plugin\scripts\fetch_imgui.ps1
+
+	After fetching, re-run CMake to configure and build.
+*/
 #pragma once
-
-#include <cstdarg>
-#include <string>
-
-namespace ImGui {
-
-inline void TextWrapped(const char* /*fmt*/) {}
-inline void TextWrapped(const char* /*fmt*/, const char* /*s*/) {}
-inline void TextUnformatted(const char* /*text*/) {}
-inline void BulletText(const char* /*fmt*/, const char* /*s*/) {}
-inline void Spacing() {}
-
-} // namespace ImGui
+#error "Local ImGui stub removed. Run bakkes_plugin/scripts/fetch_imgui.ps1 to fetch Dear ImGui into third_party/imgui"

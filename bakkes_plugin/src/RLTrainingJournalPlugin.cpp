@@ -1,4 +1,5 @@
 #include "RLTrainingJournalPlugin.h"
+#include "DiagnosticLogger.h"
 
 #include "bakkesmod/wrappers/GameWrapper.h"
 #include "bakkesmod/wrappers/ArrayWrapper.h"
@@ -10,7 +11,7 @@
 #include "bakkesmod/wrappers/UniqueIDWrapper.h"
 #include "bakkesmod/wrappers/UnrealStringWrapper.h"
 
-#include "imgui/imgui.h"
+#include "../third_party/imgui/imgui.h"
 
 #include <algorithm>
 #include <cmath>
@@ -32,13 +33,57 @@ namespace
 
 void RLTrainingJournalPlugin::onLoad()
 {
+    DiagnosticLogger::Log("onLoad: start");
+    if (cvarManager)
+    {
+        cvarManager->log("RTJ: onLoad() starting");
+        DiagnosticLogger::Log("onLoad: cvarManager present");
+    } else {
+        DiagnosticLogger::Log("onLoad: cvarManager null");
+    }
+
     RegisterCVars();
+
+    DiagnosticLogger::Log("onLoad: RegisterCVars completed");
+    if (cvarManager)
+    {
+        cvarManager->log("RTJ: registered CVars");
+    }
+
     HookMatchEvents();
 
-    std::string baseUrl = cvarManager->getCvar(kBaseUrlCvarName).getStringValue();
-    apiClient = std::make_unique<ApiClient>(baseUrl);
+    DiagnosticLogger::Log("onLoad: HookMatchEvents completed");
+    if (cvarManager)
+    {
+        cvarManager->log("RTJ: hooked match events");
+    }
 
-    cvarManager->log("RL Training Journal plugin loaded");
+
+    try
+    {
+        std::string baseUrl = cvarManager ? cvarManager->getCvar(kBaseUrlCvarName).getStringValue() : std::string();
+        DiagnosticLogger::Log(std::string("onLoad: creating ApiClient with baseUrl=") + baseUrl);
+        apiClient = std::make_unique<ApiClient>(baseUrl);
+        DiagnosticLogger::Log("onLoad: ApiClient created");
+        if (cvarManager)
+        {
+            cvarManager->log("RTJ: ApiClient created");
+        }
+    }
+    catch (const std::exception& ex)
+    {
+        DiagnosticLogger::Log(std::string("onLoad: exception creating ApiClient: ") + ex.what());
+        if (cvarManager)
+        {
+            cvarManager->log(std::string("RTJ: exception creating ApiClient: ") + ex.what());
+        }
+    }
+
+    DiagnosticLogger::Log("onLoad: complete");
+    if (cvarManager)
+    {
+        cvarManager->log("RL Training Journal plugin loaded");
+    }
 }
 
 void RLTrainingJournalPlugin::onUnload()
@@ -58,10 +103,27 @@ void RLTrainingJournalPlugin::RegisterCVars()
         }
     });
 
+    // UI enable/disable CVar: default 0 (disabled) to be safe while debugging crashes.
+    auto uiEnabled = cvarManager->registerCvar("rtj_ui_enabled", "0", "Enable plugin ImGui UI (1 = enabled, 0 = disabled)");
+    uiEnabled.addOnValueChanged([this](std::string, CVarWrapper cvar) {
+        try {
+            uiEnabled_ = cvar.getBoolValue();
+            DiagnosticLogger::Log(std::string("CVar rtj_ui_enabled changed: ") + (uiEnabled_ ? "1" : "0"));
+        } catch(...) {
+            DiagnosticLogger::Log("CVar rtj_ui_enabled: invalid value");
+        }
+    });
+
+    // Initialize uiEnabled_ from the CVar value
+    try {
+        uiEnabled_ = uiEnabled.getBoolValue();
+    } catch(...) { uiEnabled_ = false; }
+
     cvarManager->registerCvar(kUserIdCvarName, "test-player", "User identifier sent as X-User-Id when uploading matches");
     cvarManager->registerCvar(kGamesPlayedCvarName, "1", "Increment for gamesPlayedDiff payload field");
 
     cvarManager->registerNotifier("rtj_force_upload", [this](std::vector<std::string>) {
+        DiagnosticLogger::Log("notifier: rtj_force_upload invoked");
         if (!gameWrapper)
         {
             return;
@@ -106,6 +168,7 @@ void RLTrainingJournalPlugin::HookMatchEvents()
 
 void RLTrainingJournalPlugin::HandleGameEnd(std::string)
 {
+    DiagnosticLogger::Log("HandleGameEnd: called");
     if (!gameWrapper)
     {
         return;
@@ -128,11 +191,13 @@ void RLTrainingJournalPlugin::HandleGameEnd(std::string)
     }
 
     const std::string payload = BuildMatchPayload(server);
+    DiagnosticLogger::Log(std::string("HandleGameEnd: payload length=") + std::to_string(payload.size()));
     DispatchPayloadAsync("/api/mmr-log", payload);
 }
 
 void RLTrainingJournalPlugin::HandleReplayRecorded(std::string)
 {
+    DiagnosticLogger::Log("HandleReplayRecorded: called");
     if (!gameWrapper || !gameWrapper->IsInReplay())
     {
         return;
@@ -145,6 +210,7 @@ void RLTrainingJournalPlugin::HandleReplayRecorded(std::string)
     }
 
     const std::string payload = BuildMatchPayload(server);
+    DiagnosticLogger::Log(std::string("HandleReplayRecorded: payload length=") + std::to_string(payload.size()));
     DispatchPayloadAsync("/api/mmr-log", payload);
 }
 
@@ -386,6 +452,8 @@ void RLTrainingJournalPlugin::DispatchPayloadAsync(const std::string& endpoint, 
         return;
     }
 
+    DiagnosticLogger::Log(std::string("DispatchPayloadAsync: endpoint=") + endpoint + ", body_len=" + std::to_string(body.size()));
+
     CleanupFinishedRequests();
 
     const std::string userId = cvarManager->getCvar(kUserIdCvarName).getStringValue();
@@ -432,6 +500,33 @@ void RLTrainingJournalPlugin::Render()
         lastResponse = lastResponseMessage;
         lastError = lastErrorMessage;
     }
+    // Ensure ImGui context is set for this thread before calling any ImGui APIs.
+    if (imguiContext_)
+    {
+        ImGui::SetCurrentContext(imguiContext_);
+    }
+
+    // If UI is disabled via CVar, skip all ImGui calls immediately.
+    if (!uiEnabled_)
+    {
+        DiagnosticLogger::Log("Render: UI disabled by rtj_ui_enabled CVar, skipping");
+        return;
+    }
+
+    // Defensive logging: record thread id and ImGui context pointer for diagnostics.
+    {
+        std::ostringstream ss;
+        ss << "Render: thread=" << std::this_thread::get_id() << " imgui_ctx=" << reinterpret_cast<uintptr_t>(ImGui::GetCurrentContext());
+        DiagnosticLogger::Log(ss.str());
+    }
+
+    // Avoid calling ImGui if there's no current ImGui context (prevents crashes when host hasn't
+    // created a context yet or when rendering is invoked outside a proper ImGui frame).
+    if (ImGui::GetCurrentContext() == nullptr)
+    {
+        DiagnosticLogger::Log("Render: ImGui context not available, skipping UI calls");
+        return;
+    }
 
     ImGui::TextWrapped("Uploads match summaries to the Rocket League Training Journal API.");
     if (!lastResponse.empty())
@@ -446,8 +541,40 @@ void RLTrainingJournalPlugin::Render()
 
 void RLTrainingJournalPlugin::RenderSettings()
 {
+    // Ensure ImGui context is set for this thread before calling any ImGui APIs.
+    if (imguiContext_)
+    {
+        ImGui::SetCurrentContext(imguiContext_);
+    }
+
+    // If UI is disabled via CVar, skip all ImGui calls immediately.
+    if (!uiEnabled_)
+    {
+        DiagnosticLogger::Log("RenderSettings: UI disabled by rtj_ui_enabled CVar, skipping");
+        return;
+    }
+
+    // Defensive logging: record thread id and ImGui context pointer for diagnostics.
+    {
+        std::ostringstream ss;
+        ss << "RenderSettings: thread=" << std::this_thread::get_id() << " imgui_ctx=" << reinterpret_cast<uintptr_t>(ImGui::GetCurrentContext());
+        DiagnosticLogger::Log(ss.str());
+    }
+
     // Small interactive settings UI so users can easily point the plugin at a host
-    ImGui::TextUnformatted("Configure the Rocket League Training Journal plugin via console CVars or the fields below:");
+    // Guard against missing ImGui context; avoid crashes when the host hasn't set up ImGui.
+    if (ImGui::GetCurrentContext() == nullptr)
+    {
+        DiagnosticLogger::Log("RenderSettings: ImGui context not available, skipping UI calls");
+        return;
+    }
+
+    // Ensure we create our own ImGui window so content is visible inside the Plugins menu.
+    // Some BakkesMod backends provide a window for plugin settings, but wrapping in Begin/End
+    // guarantees a visible window across hosts.
+    if (ImGui::Begin("RL Training Journal", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::TextUnformatted("Configure the Rocket League Training Journal plugin via console CVars or the fields below:");
 
     static bool initialized = false;
     static char baseUrlBuf[256] = {0};
@@ -520,9 +647,30 @@ void RLTrainingJournalPlugin::RenderSettings()
 
     ImGui::Spacing();
     ImGui::TextWrapped("Tip: Set the API URL to the Mac's LAN IP (for example: http://192.168.1.236:4000) on the Windows machine using this UI. The plugin will then POST match data to that address. For advanced setups (HTTPS, public access) consider using a reverse proxy or port forwarding.");
+
+    }
+    ImGui::End();
 }
 
 std::string RLTrainingJournalPlugin::GetPluginName()
 {
     return "RL Training Journal";
+}
+
+std::string RLTrainingJournalPlugin::GetMenuName()
+{
+    return "rltrainingjournal"; // internal menu name (no spaces)
+}
+
+std::string RLTrainingJournalPlugin::GetMenuTitle()
+{
+    return "RL Training Journal"; // title shown in the BakkesMod menu
+}
+
+void RLTrainingJournalPlugin::SetImGuiContext(uintptr_t ctx)
+{
+    // BakkesMod passes an ImGuiContext pointer as an integer. Store it so
+    // Render/RenderSettings can set it on whichever thread executes them.
+    imguiContext_ = reinterpret_cast<ImGuiContext*>(ctx);
+    DiagnosticLogger::Log(std::string("SetImGuiContext: stored context ptr=") + std::to_string(reinterpret_cast<uintptr_t>(imguiContext_)));
 }

@@ -46,66 +46,45 @@ This document is for the developer building the Rocket League Training Journal B
 
 The API validates field presence/format and returns `400` errors like `"shader must be ..."`. Include meaningful logging so you can see failure reasons in the plugin’s console output.
 
-## Favorites Sync Details
-
-- When the UI hits `/api/v1/bakkes/favorites`, it sends `X-User-Id` with whatever `VITE_BAKKES_USER_ID` is configured locally for testing (ex: `test-player`). Make sure your plugin also sends a stable user ID on every request so the server can resolve that user’s favorites.
-- Favorites are stored per-user in `bakkes_favorites` and look like `{ userId, name, code }`. The UI uses a favorites dropdown on the skills form and persists the `favoriteCode` with the skill. If your plugin also knows favorite names/codes, push them into this table via a small companion endpoint you add, or coordinate with the UI flows.
-
-## UI Behavior That Matters
-
-- The skills screen (`ui/src/lib/SkillsScreen.svelte`) fetches favorites and displays:
-  - a loading state while the API responds;
-  - an error state with the feedback text from `/api/v1/bakkes/favorites` if it fails;
-  - a disabled dropdown when there are no favorites;
-  - a dropdown bound to `selectedFavoriteCode` when favorites exist.
-- Submit handlers include `favoriteCode` in the `createSkill` payload, so a matching favorite can be associated with the new skill.
-- Since the UI runs locally, no authentication is required. The plugin simply needs to target the same localhost host/port combination.
-
-## Tips for Plugin Development
-
-1. **Configure a user ID** – Set `VITE_BAKKES_USER_ID` (or an equivalent env var inside the plugin) to identify the player whose favorites should be returned. Use the same ID in your `/api/mmr-log` payload for debugging correlations.
-2. **Handle errors gracefully** – When the API replies with `400`, log the error message and optionally retry after you fix the payload. For `5xx`, back off and retry automatically.
-3. **Respect timing** – The UI expects near-realtime updates. Send the POST as soon as Bakkes reports the match, and if you batch multiple playlists, send them sequentially.
-4. **Expose diagnostics** – You can optionally GET `/api/mmr` right before sending to confirm the most recent log entries, or show a “last sync” indicator in your plugin UI.
-
-## Troubleshooting
-
 - The API logs (stdout inside `api/`) show validation failures or database errors. Watch them while testing.
-- The UI runs in Vite; network errors show up in the browser console and the offline banner component inside `HomeScreen.svelte`.
-- If the favorites dropdown is stuck on “No favorites yet,” confirm your plugin inserted favorites for the `X-User-Id` you are testing with.
 
-## Next Steps
-1. Build the plugin inside this folder, referencing the API contract above. You can copy `api/README.md` features (skills/presets) if your plugin needs to manipulate training data.
-2. When ready, integrate plugin UI telemetry with the training dashboard by posting to `/api/mmr-log` and optionally calling `/api/v1/bakkes/favorites` so the UI stays in sync.
+ImGui (required)
+-----------------
 
-## RL Training Journal Plugin
+Dear ImGui is required for building this plugin. There is no local fallback included — the build will fail if `imgui.h` isn't available. To simplify developer setup, a helper script is provided to fetch ImGui into the untracked `third_party/imgui` folder.
 
-This repository now includes a ready-to-build BakkesMod plugin that automates the match logging flow outlined above.
+Notes:
+- `third_party/imgui` is intentionally not committed to the repository. The helper script clones ImGui locally during developer setup.
+- The CMake option `RTJ_REQUIRE_IMGUI` is ON by default; leave it on to ensure runtime parity with the real ImGui API.
 
-### Features
+Automatic fetch (Windows PowerShell):
 
-- Hooks into the `GameEvent_Soccar` match-end events and replay recordings to capture the final scoreboard for every online match.
-- Collects each player's goals, assists, saves, shots, final score, and team index plus the team scores so the UI's training dashboard can reconstruct the match context.
-- Reads the local MMR from `MMRWrapper` for the playlist associated with the match and submits it as `mmr` along with the configured `gamesPlayedDiff`.
-- Sends JSON payloads to `/api/mmr-log` using the Windows WinHTTP stack so the Express API receives the same data the Svelte UI expects.
-- Adds in-game diagnostics (ImGui window + `rtj_force_upload` notifier) so you can inspect the last API response and manually resend the most recent payload while testing.
+```powershell
+# From repository root
+pwsh .\bakkes_plugin\scripts\fetch_imgui.ps1
+```
 
-### Configuration
+Manual fetch (git):
 
-The plugin exposes three console CVars:
-
-| CVar | Default | Description |
-| --- | --- | --- |
+```powershell
 | `rtj_api_base_url` | `http://localhost:4000` | Points to the Express API that powers the UI. |
 | `rtj_user_id` | `test-player` | Sent as `X-User-Id` so `/api/v1/bakkes/favorites` can associate favorites with the correct player. |
 | `rtj_games_played_increment` | `1` | Controls the `gamesPlayedDiff` field in the payload. |
 
 The `rtj_force_upload` notifier pushes whatever match data is currently cached (for example, right after a game ends) without waiting for the next event trigger.
 
+Manual fetch (macOS / Linux):
+
+```bash
+
 ### Building
 
 1. Install the [BakkesMod Plugin SDK](https://bakkesmodwiki.com/wiki/BakkesModSDK) and set the `BAKKESMODSDK` environment variable to the SDK root.
 2. From this folder run:
+
+After fetching ImGui, reconfigure and build (example):
+
+```powershell
 
    ```bash
    cmake -S . -B build

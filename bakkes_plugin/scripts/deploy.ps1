@@ -31,6 +31,10 @@ param(
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $pluginRoot = Resolve-Path (Join-Path $scriptRoot "..")
 
+# Ensure deploy directory exists early so we can copy single-file sources into it
+$deployDir = Join-Path $pluginRoot 'deploy'
+if (-not (Test-Path $deployDir)) { New-Item -ItemType Directory -Path $deployDir | Out-Null }
+
 # Candidate locations (relative to plugin root)
 $candidates = @(
     "build/Release",
@@ -40,19 +44,38 @@ $candidates = @(
     "build"
 )
 
+# If Source is a file path to a specific built artifact, copy that file directly.
 if ($Source -and $Source.Trim() -ne "") {
-    $candidates = ,$Source + $candidates
+  # If Source points to an existing file (absolute or relative), copy that file.
+  if (Test-Path $Source -PathType Leaf) {
+    $fullPath = (Resolve-Path $Source).Path
+    $dest = Join-Path $deployDir (Split-Path $fullPath -Leaf)
+    Copy-Item -Path $fullPath -Destination $dest -Force
+    Write-Host "Copied: $fullPath -> $dest"
+    # Also copy pluginconfig.json if present
+    $pluginConfigPath = Join-Path $pluginRoot 'pluginconfig.json'
+    if (Test-Path $pluginConfigPath) {
+      $destCfg = Join-Path $deployDir 'pluginconfig.json'
+      Copy-Item -Path $pluginConfigPath -Destination $destCfg -Force
+      Write-Host "Copied: $pluginConfigPath -> $destCfg"
+    }
+    Write-Host "Done. Copied 1 file(s) into $deployDir"
+    exit 0
+  }
+
+  # Otherwise treat Source as a relative path (prepend to candidate list)
+  $candidates = ,$Source + $candidates
 }
 
 $foundSource = $null
 foreach ($c in $candidates) {
-    $p = Join-Path $pluginRoot $c
-    if (Test-Path $p) { $foundSource = (Resolve-Path $p).Path; break }
+  $p = Join-Path $pluginRoot $c
+  if (Test-Path $p) { $foundSource = (Resolve-Path $p).Path; break }
 }
 
 if (-not $foundSource) {
-    Write-Error "No build output folder found. Checked: $($candidates -join ', ')"
-    exit 2
+  Write-Error "No build output folder found. Checked: $($candidates -join ', ')"
+  exit 2
 }
 
 $deployDir = Join-Path $pluginRoot 'deploy'

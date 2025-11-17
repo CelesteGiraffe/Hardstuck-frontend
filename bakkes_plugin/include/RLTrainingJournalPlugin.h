@@ -1,10 +1,6 @@
 #pragma once
 
-// Include the real BakkesMod SDK headers when building on Windows (where the
-// SDK is expected to be installed). For local development on macOS or when
-// the SDK isn't available, use lightweight stubs so the editor and linter
-// won't produce include errors.
-#if defined(_WIN32) && __has_include("bakkesmod/plugin/bakkesmodplugin.h")
+#if __has_include("bakkesmod/plugin/bakkesmodplugin.h")
 #include "bakkesmod/plugin/bakkesmodplugin.h"
 #include "bakkesmod/plugin/PluginSettingsWindow.h"
 #include "bakkesmod/plugin/PluginWindow.h"
@@ -22,6 +18,10 @@
 #include <string>
 #include <vector>
 
+// Forward-declare ImGuiContext so we can store a pointer without pulling in
+// the full Dear ImGui headers in this public header.
+struct ImGuiContext;
+
 // Forward declarations from the BakkesMod SDK wrappers used in method signatures.
 // Keep the header lightweight and avoid pulling in heavy wrapper headers here.
 class ServerWrapper;
@@ -37,6 +37,9 @@ public:
     void RenderSettings() override;
     void Render() override;
     std::string GetPluginName() override;
+    std::string GetMenuName() override;
+    std::string GetMenuTitle() override;
+    void SetImGuiContext(uintptr_t ctx) override;
 
 private:
     void RegisterCVars();
@@ -57,4 +60,11 @@ private:
     std::vector<std::future<void>> pendingRequests;
     std::string lastResponseMessage;
     std::string lastErrorMessage;
+    // Stored ImGui context pointer provided by BakkesMod via SetImGuiContext.
+    // We keep it and call ImGui::SetCurrentContext() inside Render/RenderSettings
+    // so the context is set on whichever thread performs rendering.
+    ImGuiContext* imguiContext_ = nullptr;
+    // Allow disabling the UI at runtime to avoid crashes while debugging.
+    // Controlled by CVar `rtj_ui_enabled` (0 = disabled, 1 = enabled).
+    bool uiEnabled_ = false;
 };
