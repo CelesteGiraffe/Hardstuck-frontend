@@ -195,20 +195,26 @@ std::string RLTrainingJournalPlugin::Escape(const std::string& value) const
     return oss.str();
 }
 
-std::string RLTrainingJournalPlugin::PlaylistNameFromServer(const ServerWrapper& server) const
+std::string RLTrainingJournalPlugin::PlaylistNameFromServer(ServerWrapper server) const
 {
     if (!server)
     {
         return "Unknown";
     }
-
     PlaylistWrapper playlist = server.GetPlaylist();
     if (playlist)
     {
-        auto name = playlist.GetPlaylistName();
-        if (!name.IsNull())
+        std::string name;
+        try {
+            name = playlist.GetLocalizedName();
+        } catch(...) { }
+        if (name.empty()) {
+            try { name = playlist.GetName(); } catch(...) { }
+        }
+
+        if (!name.empty())
         {
-            return name.ToString();
+            return name;
         }
 
         const int playlistId = playlist.GetPlaylistId();
@@ -235,7 +241,7 @@ std::string RLTrainingJournalPlugin::PlaylistNameFromServer(const ServerWrapper&
     return "Unknown";
 }
 
-std::string RLTrainingJournalPlugin::SerializeTeams(const ServerWrapper& server) const
+std::string RLTrainingJournalPlugin::SerializeTeams(ServerWrapper server) const
 {
     std::ostringstream oss;
     oss << '[';
@@ -274,7 +280,7 @@ std::string RLTrainingJournalPlugin::SerializeTeams(const ServerWrapper& server)
     return oss.str();
 }
 
-std::string RLTrainingJournalPlugin::SerializeScoreboard(const ServerWrapper& server) const
+std::string RLTrainingJournalPlugin::SerializeScoreboard(ServerWrapper server) const
 {
     std::ostringstream oss;
     oss << '[';
@@ -306,10 +312,10 @@ std::string RLTrainingJournalPlugin::SerializeScoreboard(const ServerWrapper& se
             const std::string playerName = pri.GetPlayerName().IsNull() ? std::string("Unknown") : pri.GetPlayerName().ToString();
             const int teamIndex = pri.GetTeamNum();
             const int score = pri.GetMatchScore();
-            const int goals = pri.GetGoals();
-            const int assists = pri.GetAssists();
-            const int saves = pri.GetSaves();
-            const int shots = pri.GetShots();
+            const int goals = pri.GetMatchGoals();
+            const int assists = pri.GetMatchAssists();
+            const int saves = pri.GetMatchSaves();
+            const int shots = pri.GetMatchShots();
 
             oss << '{'
                 << "\"name\":" << Escape(playerName) << ','
@@ -327,7 +333,7 @@ std::string RLTrainingJournalPlugin::SerializeScoreboard(const ServerWrapper& se
     return oss.str();
 }
 
-std::string RLTrainingJournalPlugin::BuildMatchPayload(const ServerWrapper& server) const
+std::string RLTrainingJournalPlugin::BuildMatchPayload(ServerWrapper server) const
 {
     const auto now = std::chrono::system_clock::now();
     const std::string timestamp = FormatTimestamp(now);
@@ -335,15 +341,22 @@ std::string RLTrainingJournalPlugin::BuildMatchPayload(const ServerWrapper& serv
     const int gamesPlayedDiff = cvarManager->getCvar(kGamesPlayedCvarName).getIntValue();
 
     float mmr = 0.0f;
-    MMRWrapper mmrWrapper = gameWrapper ? gameWrapper->GetMMRWrapper() : MMRWrapper();
-    if (mmrWrapper)
+    if (gameWrapper)
     {
-        PlaylistWrapper playlist = server.GetPlaylist();
-        const int playlistId = playlist ? playlist.GetPlaylistId() : 0;
-        UniqueIDWrapper uniqueId = gameWrapper->GetUniqueID();
-        if (uniqueId)
+        MMRWrapper mmrWrapper = gameWrapper->GetMMRWrapper();
+        if (mmrWrapper.memory_address != 0)
         {
-            mmr = mmrWrapper.GetPlayerMMR(uniqueId, playlistId);
+            PlaylistWrapper playlist = server.GetPlaylist();
+            const int playlistId = playlist ? playlist.GetPlaylistId() : 0;
+            UniqueIDWrapper uniqueId = gameWrapper->GetUniqueID();
+            bool hasUniqueId = false;
+            try {
+                hasUniqueId = (uniqueId.GetUID() != 0) || (!uniqueId.GetEpicAccountID().empty());
+            } catch(...) { hasUniqueId = false; }
+            if (hasUniqueId)
+            {
+                mmr = mmrWrapper.GetPlayerMMR(uniqueId, playlistId);
+            }
         }
     }
 

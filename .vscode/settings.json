@@ -1,3 +1,4 @@
 {
-    "cmake.sourceDirectory": "/Users/celesteartley/Documents/GitHub/RL-Trainer-2/bakkes_plugin"
+    "cmake.sourceDirectory": "C:/Users/Celes/Documents/GitHub/RL-Trainer-2/bakkes_plugin",
+    "C_Cpp.default.compilerPath": "C:/Program Files/LLVM/bin/clang.exe"
 }

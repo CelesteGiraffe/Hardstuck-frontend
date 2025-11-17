@@ -32,3 +32,48 @@ pnpm-debug.log*
 # macOS files
 .DS_Store
 BakkesModSDK-master
+
+# C/C++ build artifacts and IDE files
+# Ignore Visual Studio and CMake build outputs produced when building the plugin
+*.suo
+*.user
+*.userosscache
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.opensdf
+*.sdf
+.vs/
+
+# CMake files and caches
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+generate.stamp
+
+# Build output folders for bakkes_plugin
+/bakkes_plugin/build/
+/bakkes_plugin/Release/
+/bakkes_plugin/x64/
+/bakkes_plugin/*.exp
+/bakkes_plugin/*.lib
+/bakkes_plugin/*.obj
+/bakkes_plugin/*.pdb
+/bakkes_plugin/*.exe
+/bakkes_plugin/*.dll
+
+# Generic binary artifacts
+*.o
+*.obj
+*.pyc
+*.pyo
+*.pdb
+*.dll
+*.exe
+*.so
+*.dylib
+*.lib
+
+# Keep a tiny deploy folder in bakkes_plugin (tracked) for test artifacts
+!/bakkes_plugin/deploy/

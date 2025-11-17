@@ -8,6 +8,7 @@
 #include "bakkesmod/plugin/bakkesmodplugin.h"
 #include "bakkesmod/plugin/PluginSettingsWindow.h"
 #include "bakkesmod/plugin/PluginWindow.h"
+#include "bakkesmod/plugin/compat.h"
 #else
 #include "bakkesmod_stubs.h"
 #endif
@@ -42,10 +43,10 @@ private:
     void HookMatchEvents();
     void HandleGameEnd(std::string eventName);
     void HandleReplayRecorded(std::string eventName);
-    std::string BuildMatchPayload(const ServerWrapper& server) const;
-    std::string SerializeScoreboard(const ServerWrapper& server) const;
-    std::string SerializeTeams(const ServerWrapper& server) const;
-    std::string PlaylistNameFromServer(const ServerWrapper& server) const;
+    std::string BuildMatchPayload(ServerWrapper server) const;
+    std::string SerializeScoreboard(ServerWrapper server) const;
+    std::string SerializeTeams(ServerWrapper server) const;
+    std::string PlaylistNameFromServer(ServerWrapper server) const;
     std::string FormatTimestamp(const std::chrono::system_clock::time_point& timePoint) const;
     std::string Escape(const std::string& value) const;
     void DispatchPayloadAsync(const std::string& endpoint, const std::string& body);
