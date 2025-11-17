@@ -85,3 +85,4 @@ generate.stamp
 
 # Third-party folders that developers should fetch locally (do not commit)
 /bakkes_plugin/third_party/
+/bakkes_plugin/BakkesmodPluginTemplate-master/
