@@ -167,6 +167,36 @@ export async function createMmrLog(payload: MmrLogPayload): Promise<void> {
   }
 }
 
+export async function deleteMmrRecord(id: number): Promise<void> {
+  const response = await fetch(buildUrl(`/api/mmr/${id}`), {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to delete MMR record');
+  }
+}
+
+export async function deleteMmrRecords(filters: { playlist?: string; from?: string; to?: string } = {}): Promise<{ deleted: number } | void> {
+  const params = new URLSearchParams();
+  if (filters.playlist) params.set('playlist', filters.playlist);
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+
+  const path = `/api/mmr${params.toString() ? `?${params}` : ''}`;
+  const response = await fetch(buildUrl(path), { method: 'DELETE' });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to delete MMR records');
+  }
+
+  // server returns { deleted } on success
+  const data = await response.json().catch(() => null);
+  return data ?? undefined;
+}
+
 export async function getSkills(): Promise<Skill[]> {
   const response = await fetch(buildUrl('/api/skills'));
   if (!response.ok) {

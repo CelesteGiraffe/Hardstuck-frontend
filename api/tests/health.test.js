@@ -116,6 +116,69 @@ describe('MMR log endpoints', () => {
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({ error: 'gamesPlayedDiff must be a number' });
   });
+
+  it('deletes a stored record by id', async () => {
+    const payload = {
+      timestamp: '2025-11-15T00:00:00Z',
+      playlist: 'Standard',
+      mmr: 2200,
+      gamesPlayedDiff: 1,
+      source: 'bakkes',
+    };
+
+    const post = await request(app).post('/api/mmr-log').send(payload).set('Content-Type', 'application/json');
+    expect(post.statusCode).toBe(201);
+
+    const all = await request(app).get('/api/mmr');
+    expect(all.statusCode).toBe(200);
+    expect(all.body.length).toBeGreaterThan(0);
+    const id = all.body.find((r) => r.mmr === payload.mmr).id;
+    expect(id).toBeDefined();
+
+    const del = await request(app).delete(`/api/mmr/${id}`);
+    expect(del.statusCode).toBe(204);
+
+    const after = await request(app).get('/api/mmr');
+    expect(after.statusCode).toBe(200);
+    expect(after.body.find((r) => r.id === id)).toBeUndefined();
+  });
+
+  it('bulk deletes records by playlist and date range', async () => {
+    const base = {
+      timestamp: '2025-11-16T00:00:00Z',
+      playlist: 'BulkTest',
+      mmr: 2000,
+      gamesPlayedDiff: 1,
+      source: 'bakkes',
+    };
+
+    await request(app).post('/api/mmr-log').send(base).set('Content-Type', 'application/json');
+    await request(app)
+      .post('/api/mmr-log')
+      .send({ ...base, timestamp: '2025-11-16T01:00:00Z', mmr: 2010 })
+      .set('Content-Type', 'application/json');
+
+    // different playlist should remain
+    await request(app)
+      .post('/api/mmr-log')
+      .send({ ...base, playlist: 'Other', timestamp: '2025-11-16T02:00:00Z', mmr: 2020 })
+      .set('Content-Type', 'application/json');
+
+    const before = await request(app).get('/api/mmr');
+    expect(before.statusCode).toBe(200);
+    const beforeCount = before.body.length;
+
+    const del = await request(app).delete('/api/mmr?playlist=BulkTest');
+    expect(del.statusCode).toBe(200);
+    expect(del.body).toHaveProperty('deleted');
+    expect(del.body.deleted).toBe(2);
+
+    const after = await request(app).get('/api/mmr');
+    expect(after.statusCode).toBe(200);
+    expect(after.body.length).toBe(beforeCount - 2);
+    // ensure 'Other' playlist still present
+    expect(after.body.some((r) => r.playlist === 'Other')).toBe(true);
+  });
 });
 
 describe('MMR filters', () => {

@@ -211,6 +211,7 @@ const insertStmt = db.prepare(
 const selectStmt = db.prepare(
   'SELECT id, timestamp, playlist, mmr, games_played_diff AS gamesPlayedDiff, source FROM mmr_logs ORDER BY timestamp ASC;'
 );
+const deleteMmrStmt = db.prepare('DELETE FROM mmr_logs WHERE id = ?;');
 const clearStmt = db.prepare('DELETE FROM mmr_logs;');
 const selectFavoritesByUserStmt = db.prepare('SELECT name, code FROM bakkes_favorites WHERE user_id = ? ORDER BY id ASC;');
 const insertFavoriteStmt = db.prepare('INSERT INTO bakkes_favorites (user_id, name, code) VALUES (?, ?, ?);');
@@ -266,6 +267,46 @@ function getMmrLogs({ playlist, from, to } = {}) {
 
 function clearMmrLogs() {
   clearStmt.run();
+}
+
+function deleteMmrLog(id) {
+  const parsed = Number(id);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error('invalid mmr id');
+  }
+
+  const info = deleteMmrStmt.run(parsed);
+  if (info.changes === 0) {
+    throw new Error('mmr record not found');
+  }
+}
+
+function deleteMmrLogs({ playlist, from, to } = {}) {
+  if (!playlist && !from && !to) {
+    throw new Error('at least one filter (playlist, from, to) is required');
+  }
+
+  const conditions = [];
+  const params = [];
+  if (playlist) {
+    conditions.push('playlist = ?');
+    params.push(playlist);
+  }
+
+  if (from) {
+    conditions.push('timestamp >= ?');
+    params.push(from);
+  }
+
+  if (to) {
+    conditions.push('timestamp <= ?');
+    params.push(to);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `DELETE FROM mmr_logs ${whereClause};`;
+  const info = db.prepare(query).run(...params);
+  return info.changes || 0;
 }
 
 function getFavoritesByUser(userId) {
@@ -730,6 +771,8 @@ module.exports = {
   getAllMmrLogs,
   getMmrLogs,
   clearMmrLogs,
+  deleteMmrLog,
+  deleteMmrLogs,
   getFavoritesByUser,
   addFavoriteForUser,
   clearFavorites,

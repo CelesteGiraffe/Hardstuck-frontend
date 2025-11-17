@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { createMmrLog } from './api';
+  import { createMmrLog, deleteMmrRecord, deleteMmrRecords } from './api';
   import type { Session, SessionBlock, SkillSummary, MmrRecord } from './api';
   import { useSkills } from './useSkills';
   import html2canvas from 'html2canvas';
@@ -106,6 +106,8 @@
   let exportMessage: string | null = null;
   let exportError: string | null = null;
   let exportLoading = false;
+  let deleteFilterLoading = false;
+  let deletingIds: number[] = [];
 
   function arraysEqual(a: string[], b: string[]) {
     if (a.length !== b.length) {
@@ -354,6 +356,55 @@
       exportError = err instanceof Error ? err.message : 'Unable to capture screenshot';
     } finally {
       exportLoading = false;
+    }
+  }
+
+  function isDeleting(id: number) {
+    return deletingIds.includes(id);
+  }
+
+  async function handleDeleteMmr(id: number) {
+    if (!window.confirm('Delete this MMR record? This cannot be undone.')) {
+      return;
+    }
+
+    deletingIds = [...deletingIds, id];
+    try {
+      await deleteMmrRecord(id);
+      const filters = buildMmrFilters();
+      await mmrLogQuery.refresh({ from: filters.from, to: filters.to });
+    } catch (err) {
+      // show a simple alert - keep UX minimal for now
+      alert(err instanceof Error ? err.message : 'Unable to delete MMR record');
+    } finally {
+      deletingIds = deletingIds.filter((x) => x !== id);
+    }
+  }
+
+  async function handleDeleteFiltered() {
+    if (!window.confirm('Delete all MMR records matching the current playlist/date filters? This cannot be undone.')) {
+      return;
+    }
+
+    deleteFilterLoading = true;
+    exportMessage = null;
+    exportError = null;
+    try {
+      const { from, to } = buildMmrFilters();
+      const playlistValue = playlists.length && selectedPlaylist ? selectedPlaylist : '';
+      const result = await deleteMmrRecords({ playlist: playlistValue || undefined, from, to });
+      if (result && typeof result.deleted === 'number') {
+        exportMessage = `Deleted ${result.deleted} records`;
+      } else {
+        exportMessage = 'Deleted matching records';
+      }
+
+      const filters = buildMmrFilters();
+      await mmrLogQuery.refresh({ from: filters.from, to: filters.to });
+    } catch (err) {
+      exportError = err instanceof Error ? err.message : 'Unable to delete records';
+    } finally {
+      deleteFilterLoading = false;
     }
   }
 
@@ -616,6 +667,9 @@
       <button type="button" class="btn-tertiary" on:click={downloadHistoryScreenshot} disabled={exportLoading}>
         Download screenshot
       </button>
+      <button type="button" class="btn-danger" on:click={handleDeleteFiltered} disabled={deleteFilterLoading}>
+        {deleteFilterLoading ? 'Deleting…' : 'Delete selected data'}
+      </button>
       {#if exportMessage}
         <p class="export-feedback success">{exportMessage}</p>
       {/if}
@@ -699,6 +753,43 @@
           <span>{mmrChartMinValue} MMR</span>
         </div>
       </div>
+
+      {#if mmrRecords.length}
+        <div class="mmr-records">
+          <h3>MMR records for {selectedPlaylist}</h3>
+          <table class="mmr-record-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>MMR</th>
+                <th>Games</th>
+                <th>Source</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each mmrRecords as rec}
+                <tr>
+                  <td>{formatDate(rec.timestamp)}</td>
+                  <td>{rec.mmr}</td>
+                  <td>{rec.gamesPlayedDiff}</td>
+                  <td>{rec.source}</td>
+                  <td>
+                    <button
+                      type="button"
+                      class="btn-danger"
+                      disabled={isDeleting(rec.id)}
+                      on:click={() => handleDeleteMmr(rec.id)}
+                    >
+                      {isDeleting(rec.id) ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
     {/if}
   </div>
 

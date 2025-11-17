@@ -4,6 +4,8 @@ const {
   saveMmrLog,
   getAllMmrLogs,
   getMmrLogs,
+  deleteMmrLog,
+  deleteMmrLogs,
   getAllSkills,
   upsertSkill,
   deleteSkill,
@@ -82,6 +84,38 @@ app.post('/api/mmr-log', (req, res) => {
 app.get('/api/mmr', (req, res) => {
   const { playlist, from, to } = req.query;
   res.json(getMmrLogs({ playlist, from, to }));
+});
+
+app.delete('/api/mmr/:id', (req, res) => {
+  const id = Number(req.params.id);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'invalid mmr id' });
+  }
+
+  try {
+    deleteMmrLog(id);
+    res.status(204).end();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to delete mmr record';
+    res.status(400).json({ error: message });
+  }
+});
+
+app.delete('/api/mmr', (req, res) => {
+  const { playlist, from, to } = req.query;
+
+  if (!playlist && !from && !to) {
+    return res.status(400).json({ error: 'At least one filter (playlist, from, to) is required to delete records' });
+  }
+
+  try {
+    const deleted = deleteMmrLogs({ playlist, from, to });
+    res.status(200).json({ deleted });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to delete mmr records';
+    res.status(400).json({ error: message });
+  }
 });
 
 app.get('/api/skills', (_, res) => {
