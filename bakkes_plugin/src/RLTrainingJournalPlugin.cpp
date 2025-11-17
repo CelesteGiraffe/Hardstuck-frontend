@@ -446,12 +446,80 @@ void RLTrainingJournalPlugin::Render()
 
 void RLTrainingJournalPlugin::RenderSettings()
 {
-    ImGui::TextUnformatted("Configure the Rocket League Training Journal plugin via console CVars:");
-    ImGui::BulletText("%s - API base URL", kBaseUrlCvarName);
-    ImGui::BulletText("%s - User identifier", kUserIdCvarName);
-    ImGui::BulletText("%s - gamesPlayedDiff field", kGamesPlayedCvarName);
+    // Small interactive settings UI so users can easily point the plugin at a host
+    ImGui::TextUnformatted("Configure the Rocket League Training Journal plugin via console CVars or the fields below:");
+
+    static bool initialized = false;
+    static char baseUrlBuf[256] = {0};
+    static char userIdBuf[128] = {0};
+    if (!initialized)
+    {
+        std::string currentBase = cvarManager->getCvar(kBaseUrlCvarName).getStringValue();
+        std::string currentUser = cvarManager->getCvar(kUserIdCvarName).getStringValue();
+        strncpy(baseUrlBuf, currentBase.c_str(), sizeof(baseUrlBuf) - 1);
+        strncpy(userIdBuf, currentUser.c_str(), sizeof(userIdBuf) - 1);
+        initialized = true;
+    }
+
+    ImGui::InputText("API Base URL", baseUrlBuf, sizeof(baseUrlBuf));
+    ImGui::SameLine();
+    if (ImGui::Button("Save URL"))
+    {
+        cvarManager->getCvar(kBaseUrlCvarName).setValue(std::string(baseUrlBuf));
+        if (apiClient)
+        {
+            apiClient->SetBaseUrl(std::string(baseUrlBuf));
+        }
+        cvarManager->log("RTJ: saved API base URL");
+    }
+
+    ImGui::InputText("User ID (X-User-Id)", userIdBuf, sizeof(userIdBuf));
+    ImGui::SameLine();
+    if (ImGui::Button("Save User ID"))
+    {
+        cvarManager->getCvar(kUserIdCvarName).setValue(std::string(userIdBuf));
+        cvarManager->log("RTJ: saved user id");
+    }
+
     ImGui::Spacing();
-    ImGui::TextWrapped("Use `rtj_force_upload` to immediately push the current match payload to the API. Matches are also sent automatically when online games end or when a replay is recorded.");
+    ImGui::TextWrapped("Quick helpers:");
+    if (ImGui::Button("Use localhost:4000"))
+    {
+        const char* val = "http://localhost:4000";
+        strncpy(baseUrlBuf, val, sizeof(baseUrlBuf) - 1);
+    }
+    ImGui::SameLine();
+    ImGui::TextWrapped("(Use this if the API runs on the same machine as the game)");
+
+    ImGui::Spacing();
+    if (ImGui::Button("Upload Now (push current match data)"))
+    {
+        if (!gameWrapper)
+        {
+            cvarManager->log("RTJ: no game wrapper");
+        }
+        else
+        {
+            ServerWrapper server = gameWrapper->GetOnlineGame();
+            if (!server)
+            {
+                server = gameWrapper->GetGameEventAsServer();
+            }
+
+            if (!server)
+            {
+                cvarManager->log("RTJ: no active server to report");
+            }
+            else
+            {
+                const std::string payload = BuildMatchPayload(server);
+                DispatchPayloadAsync("/api/mmr-log", payload);
+            }
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::TextWrapped("Tip: Set the API URL to the Mac's LAN IP (for example: http://192.168.1.236:4000) on the Windows machine using this UI. The plugin will then POST match data to that address. For advanced setups (HTTPS, public access) consider using a reverse proxy or port forwarding.");
 }
 
 std::string RLTrainingJournalPlugin::GetPluginName()
