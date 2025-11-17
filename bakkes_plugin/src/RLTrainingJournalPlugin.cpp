@@ -586,13 +586,6 @@ void RLTrainingJournalPlugin::RenderSettings()
         ImGui::SetCurrentContext(imguiContext_);
     }
 
-    // If UI is disabled via CVar, skip all ImGui calls immediately.
-    if (!uiEnabled_)
-    {
-        DiagnosticLogger::Log("RenderSettings: UI disabled by rtj_ui_enabled CVar, skipping");
-        return;
-    }
-
     // Defensive logging: record thread id and ImGui context pointer for diagnostics.
     {
         std::ostringstream ss;
@@ -600,7 +593,6 @@ void RLTrainingJournalPlugin::RenderSettings()
         DiagnosticLogger::Log(ss.str());
     }
 
-    // Small interactive settings UI so users can easily point the plugin at a host
     // Guard against missing ImGui context; avoid crashes when the host hasn't set up ImGui.
     if (ImGui::GetCurrentContext() == nullptr)
     {
@@ -608,10 +600,7 @@ void RLTrainingJournalPlugin::RenderSettings()
         return;
     }
 
-    // Ensure we create our own ImGui window so content is visible inside the Plugins menu.
-    // Some BakkesMod backends provide a window for plugin settings, but wrapping in Begin/End
-    // guarantees a visible window across hosts.
-    if (ImGui::Begin("RL Training Journal", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    if (!cvarManager)
     {
         if (!cvarManager)
         {
