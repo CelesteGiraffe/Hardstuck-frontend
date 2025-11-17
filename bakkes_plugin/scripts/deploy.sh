@@ -50,11 +50,14 @@ if [ $# -gt 0 ]; then
 fi
 
 copied=0
+names=""
 for pat in "${patterns[@]}"; do
   shopt -s nullglob
   for f in "$found"/$pat; do
     if [ -f "$f" ]; then
       cp -f "$f" "$deploy_dir/"
+      base=$(basename "$f")
+      names="$names $base"
       echo "Copied: $f -> $deploy_dir/"
       copied=$((copied+1))
     fi
@@ -62,8 +65,19 @@ for pat in "${patterns[@]}"; do
   shopt -u nullglob
 done
 
+# Also copy pluginconfig.json from the plugin root if present and not already copied
+if [ -f "$PLUGIN_ROOT/pluginconfig.json" ]; then
+  if echo "$names" | grep -w -q "pluginconfig.json"; then
+    echo "pluginconfig.json already copied from build output; skipping additional copy."
+  else
+    cp -f "$PLUGIN_ROOT/pluginconfig.json" "$deploy_dir/"
+    echo "Copied: $PLUGIN_ROOT/pluginconfig.json -> $deploy_dir/"
+    copied=$((copied+1))
+  fi
+fi
+
 if [ $copied -eq 0 ]; then
-  echo "No files matched the given patterns in $found" >&2
+  echo "No files matched the given patterns in $found and no pluginconfig.json was found." >&2
   exit 1
 fi
 

@@ -59,6 +59,7 @@ $deployDir = Join-Path $pluginRoot 'deploy'
 if (-not (Test-Path $deployDir)) { New-Item -ItemType Directory -Path $deployDir | Out-Null }
 
 $copied = @()
+$copiedBasenames = @()
 foreach ($pattern in $Patterns) {
     if ($Recurse) {
         $items = Get-ChildItem -Path $foundSource -Filter $pattern -Recurse -File -ErrorAction SilentlyContinue
@@ -66,17 +67,32 @@ foreach ($pattern in $Patterns) {
         $items = Get-ChildItem -Path $foundSource -Filter $pattern -File -ErrorAction SilentlyContinue
     }
     foreach ($it in $items) {
-        $dest = Join-Path $deployDir $it.Name
-        Copy-Item -Path $it.FullName -Destination $dest -Force
-        $copied += $it.FullName
-        Write-Host "Copied: $($it.FullName) -> $dest"
+      $dest = Join-Path $deployDir $it.Name
+      Copy-Item -Path $it.FullName -Destination $dest -Force
+      $copied += $it.FullName
+      $copiedBasenames += $it.Name
+      Write-Host "Copied: $($it.FullName) -> $dest"
     }
 }
 
-if ($copied.Count -eq 0) {
-    Write-Warning "No files matched the given patterns in $foundSource."
-    exit 1
-}
+  # Also copy pluginconfig.json from the plugin root if present and not already copied
+  $pluginConfigPath = Join-Path $pluginRoot 'pluginconfig.json'
+  if (Test-Path $pluginConfigPath) {
+    if ($copiedBasenames -contains 'pluginconfig.json') {
+      Write-Host "pluginconfig.json already copied from build output; skipping additional copy."
+    } else {
+      $dest = Join-Path $deployDir 'pluginconfig.json'
+      Copy-Item -Path $pluginConfigPath -Destination $dest -Force
+      $copied += $pluginConfigPath
+      Write-Host "Copied: $pluginConfigPath -> $dest"
+    }
+  }
 
-Write-Host "Done. Copied $($copied.Count) file(s) into $deployDir"
+  if ($copied.Count -eq 0) {
+    Write-Warning "No files matched the given patterns in $foundSource and no pluginconfig.json was found."
+    exit 1
+  }
+
+  Write-Host "Done. Copied $($copied.Count) file(s) into $deployDir"
+  exit 0
 exit 0

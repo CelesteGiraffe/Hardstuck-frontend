@@ -47,4 +47,8 @@ Notes
 - They will overwrite existing files in `deploy/` with the copied versions.
 - The scripts do not delete files from `deploy/` so you can keep hand-picked artifacts there.
 
+Auto-copied files
+------------------
+- In addition to the artifacts matched by the provided patterns (for example the built DLL), the scripts will also automatically copy `pluginconfig.json` from the plugin root into `deploy/` if it exists. This ensures the runtime configuration used to test the plugin is available alongside the built binary.
+
 If you'd like I can also add a simple CMake post-build step or a Visual Studio post-build step to automatically invoke the Windows script after a successful build — tell me which build setup you use and I can add it.
