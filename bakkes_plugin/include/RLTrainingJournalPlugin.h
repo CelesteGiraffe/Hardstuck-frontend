@@ -54,6 +54,8 @@ private:
     std::string Escape(const std::string& value) const;
     void DispatchPayloadAsync(const std::string& endpoint, const std::string& body);
     void CleanupFinishedRequests();
+    void ApplyBaseUrl(const std::string& newUrl);
+    void TriggerManualUpload();
 
     std::unique_ptr<ApiClient> apiClient;
     mutable std::mutex requestMutex;
@@ -67,4 +69,5 @@ private:
     // Allow disabling the UI at runtime to avoid crashes while debugging.
     // Controlled by CVar `rtj_ui_enabled` (0 = disabled, 1 = enabled).
     bool uiEnabled_ = false;
+    bool forceLocalhost_ = true;
 };
