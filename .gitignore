@@ -59,8 +59,6 @@ generate.stamp
 
 # Build output folders for bakkes_plugin
 /bakkes_plugin/build/
-/bakkes_plugin/Release/
-/bakkes_plugin/x64/
 /bakkes_plugin/*.exp
 /bakkes_plugin/*.lib
 /bakkes_plugin/*.obj
