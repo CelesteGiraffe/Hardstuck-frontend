@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <cstring>
 #include <future>
 #include <iomanip>
 #include <sstream>
@@ -27,8 +28,11 @@ BAKKESMOD_PLUGIN(RLTrainingJournalPlugin, "RL Trainer", "1.0", PERMISSION_ALL)
 namespace
 {
     constexpr char kBaseUrlCvarName[] = "rtj_api_base_url";
+    constexpr char kForceLocalhostCvarName[] = "rtj_force_localhost";
     constexpr char kUserIdCvarName[] = "rtj_user_id";
     constexpr char kGamesPlayedCvarName[] = "rtj_games_played_increment";
+    constexpr char kUiEnabledCvarName[] = "rtj_ui_enabled";
+    constexpr char kDefaultBaseUrl[] = "http://localhost:4000";
 }
 
 void RLTrainingJournalPlugin::onLoad()
@@ -95,7 +99,7 @@ void RLTrainingJournalPlugin::onUnload()
 
 void RLTrainingJournalPlugin::RegisterCVars()
 {
-    auto baseUrl = cvarManager->registerCvar(kBaseUrlCvarName, "http://localhost:4000", "Base URL for the RL Training Journal API");
+    auto baseUrl = cvarManager->registerCvar(kBaseUrlCvarName, kDefaultBaseUrl, "Base URL for the RL Training Journal API");
     baseUrl.addOnValueChanged([this](std::string, CVarWrapper cvar) {
         if (apiClient)
         {
@@ -103,8 +107,23 @@ void RLTrainingJournalPlugin::RegisterCVars()
         }
     });
 
-    // UI enable/disable CVar: default 0 (disabled) to be safe while debugging crashes.
-    auto uiEnabled = cvarManager->registerCvar("rtj_ui_enabled", "0", "Enable plugin ImGui UI (1 = enabled, 0 = disabled)");
+    auto forceLocalhost = cvarManager->registerCvar(kForceLocalhostCvarName, "1", "Force uploads to http://localhost:4000");
+    forceLocalhost.addOnValueChanged([this](std::string, CVarWrapper cvar) {
+        try {
+            forceLocalhost_ = cvar.getBoolValue();
+        } catch(...) {
+            forceLocalhost_ = true;
+        }
+
+        if (forceLocalhost_)
+        {
+            ApplyBaseUrl(kDefaultBaseUrl);
+        }
+    });
+
+    // UI enable/disable CVar defaults to enabled so the ImGui window is visible
+    // as soon as the plugin is loaded.
+    auto uiEnabled = cvarManager->registerCvar(kUiEnabledCvarName, "1", "Enable plugin ImGui UI (1 = enabled, 0 = disabled)");
     uiEnabled.addOnValueChanged([this](std::string, CVarWrapper cvar) {
         try {
             uiEnabled_ = cvar.getBoolValue();
@@ -114,7 +133,15 @@ void RLTrainingJournalPlugin::RegisterCVars()
         }
     });
 
-    // Initialize uiEnabled_ from the CVar value
+    // Initialize CVar-backed state from their persisted values.
+    try {
+        forceLocalhost_ = forceLocalhost.getBoolValue();
+    } catch(...) { forceLocalhost_ = true; }
+    if (forceLocalhost_)
+    {
+        ApplyBaseUrl(kDefaultBaseUrl);
+    }
+
     try {
         uiEnabled_ = uiEnabled.getBoolValue();
     } catch(...) { uiEnabled_ = false; }
@@ -141,8 +168,7 @@ void RLTrainingJournalPlugin::RegisterCVars()
             return;
         }
 
-        const std::string payload = BuildMatchPayload(server);
-        DispatchPayloadAsync("/api/mmr-log", payload);
+        TriggerManualUpload();
     }, "Immediately upload the current match payload", PERMISSION_ALL);
 }
 
@@ -528,6 +554,12 @@ void RLTrainingJournalPlugin::Render()
         return;
     }
 
+    if (!ImGui::Begin("RL Training Journal##overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::End();
+        return;
+    }
+
     ImGui::TextWrapped("Uploads match summaries to the Rocket League Training Journal API.");
     if (!lastResponse.empty())
     {
@@ -537,6 +569,13 @@ void RLTrainingJournalPlugin::Render()
     {
         ImGui::TextWrapped("Last error: %s", lastError.c_str());
     }
+
+    if (ImGui::Button("Gather && Upload Now"))
+    {
+        TriggerManualUpload();
+    }
+
+    ImGui::End();
 }
 
 void RLTrainingJournalPlugin::RenderSettings()
@@ -574,79 +613,97 @@ void RLTrainingJournalPlugin::RenderSettings()
     // guarantees a visible window across hosts.
     if (ImGui::Begin("RL Training Journal", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        ImGui::TextUnformatted("Configure the Rocket League Training Journal plugin via console CVars or the fields below:");
-
-    static bool initialized = false;
-    static char baseUrlBuf[256] = {0};
-    static char userIdBuf[128] = {0};
-    if (!initialized)
-    {
-        std::string currentBase = cvarManager->getCvar(kBaseUrlCvarName).getStringValue();
-        std::string currentUser = cvarManager->getCvar(kUserIdCvarName).getStringValue();
-        strncpy(baseUrlBuf, currentBase.c_str(), sizeof(baseUrlBuf) - 1);
-        strncpy(userIdBuf, currentUser.c_str(), sizeof(userIdBuf) - 1);
-        initialized = true;
-    }
-
-    ImGui::InputText("API Base URL", baseUrlBuf, sizeof(baseUrlBuf));
-    ImGui::SameLine();
-    if (ImGui::Button("Save URL"))
-    {
-        cvarManager->getCvar(kBaseUrlCvarName).setValue(std::string(baseUrlBuf));
-        if (apiClient)
+        if (!cvarManager)
         {
-            apiClient->SetBaseUrl(std::string(baseUrlBuf));
+            ImGui::TextWrapped("CVar manager unavailable; settings UI cannot function.");
+            ImGui::End();
+            return;
         }
-        cvarManager->log("RTJ: saved API base URL");
-    }
 
-    ImGui::InputText("User ID (X-User-Id)", userIdBuf, sizeof(userIdBuf));
-    ImGui::SameLine();
-    if (ImGui::Button("Save User ID"))
-    {
-        cvarManager->getCvar(kUserIdCvarName).setValue(std::string(userIdBuf));
-        cvarManager->log("RTJ: saved user id");
-    }
+        ImGui::TextUnformatted("Configure where Rocket League Training Journal uploads are sent.");
 
-    ImGui::Spacing();
-    ImGui::TextWrapped("Quick helpers:");
-    if (ImGui::Button("Use localhost:4000"))
-    {
-        const char* val = "http://localhost:4000";
-        strncpy(baseUrlBuf, val, sizeof(baseUrlBuf) - 1);
-    }
-    ImGui::SameLine();
-    ImGui::TextWrapped("(Use this if the API runs on the same machine as the game)");
+        static char baseUrlBuf[256] = {0};
+        static char userIdBuf[128] = {0};
+        static std::string cachedBaseUrl;
+        static std::string cachedUserId;
 
-    ImGui::Spacing();
-    if (ImGui::Button("Upload Now (push current match data)"))
-    {
-        if (!gameWrapper)
+        const std::string cvarBase = cvarManager->getCvar(kBaseUrlCvarName).getStringValue();
+        const std::string cvarUser = cvarManager->getCvar(kUserIdCvarName).getStringValue();
+
+        if (cachedBaseUrl != cvarBase)
         {
-            cvarManager->log("RTJ: no game wrapper");
+            std::strncpy(baseUrlBuf, cvarBase.c_str(), sizeof(baseUrlBuf) - 1);
+            baseUrlBuf[sizeof(baseUrlBuf) - 1] = '\0';
+            cachedBaseUrl = cvarBase;
+        }
+
+        if (cachedUserId != cvarUser)
+        {
+            std::strncpy(userIdBuf, cvarUser.c_str(), sizeof(userIdBuf) - 1);
+            userIdBuf[sizeof(userIdBuf) - 1] = '\0';
+            cachedUserId = cvarUser;
+        }
+
+        bool localhostToggle = forceLocalhost_;
+        if (ImGui::Checkbox("Send data to localhost (default)", &localhostToggle))
+        {
+            cvarManager->getCvar(kForceLocalhostCvarName).setValue(localhostToggle ? "1" : "0");
+            forceLocalhost_ = localhostToggle;
+        }
+        ImGui::SameLine();
+        ImGui::TextWrapped("Uncheck to enter a remote IP/host.");
+
+        if (localhostToggle)
+        {
+            ImGui::TextWrapped("API Base URL: %s", baseUrlBuf);
+            ImGui::TextWrapped("(Locked to localhost while the checkbox is enabled.)");
         }
         else
         {
-            ServerWrapper server = gameWrapper->GetOnlineGame();
-            if (!server)
+            ImGui::InputText("API Base URL", baseUrlBuf, sizeof(baseUrlBuf));
+            ImGui::SameLine();
+            if (ImGui::Button("Save URL"))
             {
-                server = gameWrapper->GetGameEventAsServer();
-            }
-
-            if (!server)
-            {
-                cvarManager->log("RTJ: no active server to report");
-            }
-            else
-            {
-                const std::string payload = BuildMatchPayload(server);
-                DispatchPayloadAsync("/api/mmr-log", payload);
+                ApplyBaseUrl(baseUrlBuf);
+                cachedBaseUrl = baseUrlBuf;
+                cvarManager->log("RTJ: saved API base URL");
             }
         }
-    }
 
-    ImGui::Spacing();
-    ImGui::TextWrapped("Tip: Set the API URL to the Mac's LAN IP (for example: http://192.168.1.236:4000) on the Windows machine using this UI. The plugin will then POST match data to that address. For advanced setups (HTTPS, public access) consider using a reverse proxy or port forwarding.");
+        ImGui::InputText("User ID (X-User-Id)", userIdBuf, sizeof(userIdBuf));
+        ImGui::SameLine();
+        if (ImGui::Button("Save User ID"))
+        {
+            cvarManager->getCvar(kUserIdCvarName).setValue(std::string(userIdBuf));
+            cachedUserId = userIdBuf;
+            cvarManager->log("RTJ: saved user id");
+        }
+
+        ImGui::Spacing();
+        ImGui::TextWrapped("Quick helpers:");
+        if (ImGui::Button("Use localhost:4000"))
+        {
+            ApplyBaseUrl(kDefaultBaseUrl);
+            std::strncpy(baseUrlBuf, kDefaultBaseUrl, sizeof(baseUrlBuf) - 1);
+            baseUrlBuf[sizeof(baseUrlBuf) - 1] = '\0';
+            cachedBaseUrl = kDefaultBaseUrl;
+            cvarManager->getCvar(kForceLocalhostCvarName).setValue("1");
+            forceLocalhost_ = true;
+            localhostToggle = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextWrapped("Use when the training app runs on the same PC.");
+
+        ImGui::Spacing();
+        if (ImGui::Button("Gather && Upload Now"))
+        {
+            TriggerManualUpload();
+        }
+        ImGui::SameLine();
+        ImGui::TextWrapped("Captures the active match/replay and immediately syncs it.");
+
+        ImGui::Spacing();
+        ImGui::TextWrapped("Tip: Set the API URL to the LAN IP of the machine running the training app (for example: http://192.168.1.236:4000) when streaming data across devices.");
 
     }
     ImGui::End();
@@ -673,4 +730,56 @@ void RLTrainingJournalPlugin::SetImGuiContext(uintptr_t ctx)
     // Render/RenderSettings can set it on whichever thread executes them.
     imguiContext_ = reinterpret_cast<ImGuiContext*>(ctx);
     DiagnosticLogger::Log(std::string("SetImGuiContext: stored context ptr=") + std::to_string(reinterpret_cast<uintptr_t>(imguiContext_)));
+}
+
+void RLTrainingJournalPlugin::ApplyBaseUrl(const std::string& newUrl)
+{
+    if (!cvarManager)
+    {
+        return;
+    }
+
+    try
+    {
+        auto baseCvar = cvarManager->getCvar(kBaseUrlCvarName);
+        baseCvar.setValue(newUrl);
+    }
+    catch (...)
+    {
+    }
+
+    if (apiClient)
+    {
+        apiClient->SetBaseUrl(newUrl);
+    }
+}
+
+void RLTrainingJournalPlugin::TriggerManualUpload()
+{
+    if (!gameWrapper)
+    {
+        if (cvarManager)
+        {
+            cvarManager->log("RTJ: no game wrapper");
+        }
+        return;
+    }
+
+    ServerWrapper server = gameWrapper->GetOnlineGame();
+    if (!server)
+    {
+        server = gameWrapper->GetGameEventAsServer();
+    }
+
+    if (!server)
+    {
+        if (cvarManager)
+        {
+            cvarManager->log("RTJ: no active server to report");
+        }
+        return;
+    }
+
+    const std::string payload = BuildMatchPayload(server);
+    DispatchPayloadAsync("/api/mmr-log", payload);
 }
