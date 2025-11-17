@@ -1,7 +1,0 @@
-RL Training Journal
-1|Enable UI|rtj_ui_enabled
-9|--- Configuration ---
-12|API Base URL|rtj_api_base_url
-12|User ID|rtj_user_id
-0|Upload Now|rtj_force_upload
-9|Tip: Use the checkbox to enable the ImGui window (rtj_ui_enabled). The "Upload Now" button runs the console notifier.
