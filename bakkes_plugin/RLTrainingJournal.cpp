@@ -332,11 +332,10 @@ std::string RLTrainingJournalPlugin::PlaylistNameFromServer(ServerWrapper server
 
         const int playlistId = playlist.GetPlaylistId();
         static const std::unordered_map<int, std::string> playlistNames = {
-            {1, "Duel"},
-            {2, "Doubles"},
-            {3, "Standard"},
-            {4, "Chaos"},
-            {6, "Solo Standard"},
+            {1, "Ranked Duel"},
+            {2, "Ranked Doubles"},
+            {3, "Ranked Standard"},
+            {4, "Ranked 4v4"},
             {8, "Hoops"},
             {10, "Rumble"},
             {11, "Dropshot"},
@@ -552,8 +551,7 @@ std::vector<std::string> RLTrainingJournalPlugin::BuildMmrSnapshotPayloads() con
         {1, "Ranked Duel"},
         {2, "Ranked Doubles"},
         {3, "Ranked Standard"},
-        {4, "Chaos"},
-        {6, "Solo Standard"},
+        {4, "Ranked 4v4"},
         {7, "Duel (Legacy)"},
         {8, "Hoops"},
         {10, "Rumble"},

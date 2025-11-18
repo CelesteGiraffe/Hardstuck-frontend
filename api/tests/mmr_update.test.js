@@ -89,3 +89,33 @@ describe('PATCH /api/mmr/:id', () => {
     expect(resp.body).toHaveProperty('error');
   });
 });
+
+describe('DELETE /api/mmr', () => {
+  it('deletes records matching the normalized playlist even when stored as Quads', async () => {
+    const payload = {
+      timestamp: '2025-11-13T02:00:00Z',
+      playlist: 'Ranked 4v4',
+      mmr: 2050,
+      gamesPlayedDiff: 1,
+      source: 'bakkes',
+    };
+
+    const post = await request(app).post('/api/mmr-log').send(payload).set('Content-Type', 'application/json');
+    expect(post.statusCode).toBe(201);
+
+    db.insertRawMmrRecord({
+      timestamp: '2025-11-13T02:15:00Z',
+      playlist: 'Quads',
+      mmr: 1900,
+      gamesPlayedDiff: 1,
+      source: 'bakkes',
+    });
+
+    const del = await request(app).delete('/api/mmr').query({ playlist: 'Ranked 4v4' });
+    expect(del.statusCode).toBe(200);
+    expect(del.body.deleted).toBe(2);
+
+    const all = await request(app).get('/api/mmr');
+    expect(all.body.length).toBe(0);
+  });
+});

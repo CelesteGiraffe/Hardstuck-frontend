@@ -30,6 +30,7 @@
     getGoalCompletionPercent,
     getGoalRemainingMinutes,
   } from './formatters/goalProgress';
+  import { formatPlaylistDisplay } from './playlistDisplay';
 
   let apiHealthy: boolean | null = null;
   let healthChecking = false;
@@ -130,13 +131,16 @@
     const records = state.data;
     const latest = new Map<string, MmrRecord>();
     for (const record of records) {
-      const current = latest.get(record.playlist);
+      const displayName = formatPlaylistDisplay(record.playlist);
+      const current = latest.get(displayName);
       if (!current || new Date(record.timestamp).getTime() > new Date(current.timestamp).getTime()) {
-        latest.set(record.playlist, record);
+        latest.set(displayName, record);
       }
     }
 
-    latestMmr = Array.from(latest.values()).sort((a, b) => a.playlist.localeCompare(b.playlist));
+    latestMmr = Array.from(latest.values()).sort((a, b) =>
+      formatPlaylistDisplay(a.playlist).localeCompare(formatPlaylistDisplay(b.playlist))
+    );
     const chronologically = [...records].sort(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
@@ -203,10 +207,12 @@
   $: profileDisplayName = profileSettings?.name?.trim() || 'Trainer';
   $: profileAvatarUrl = profileSettings?.avatarUrl?.trim() || '/default.png';
   $: rankLabel = lastMmrRecord
-    ? `${lastMmrRecord.playlist ?? 'Rank'} · ${lastMmrRecord.mmr ?? '—'} MMR`
+    ? `${formatPlaylistDisplay(lastMmrRecord.playlist)} · ${lastMmrRecord.mmr ?? '—'} MMR`
     : 'Rank pending';
   $: rankImageSrc = lastMmrRecord
-    ? `/rank-${String(lastMmrRecord.playlist ?? 'default').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`
+    ? `/rank-${String(formatPlaylistDisplay(lastMmrRecord.playlist) || 'default')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')}.png`
     : '/default.png';
 
   $: trackEntries = $profileGoalsStore.map((goal) => {
@@ -534,7 +540,7 @@
         <ul class="dashboard-list mmr-list">
           {#each latestMmr as record}
             <li>
-              <span>{record.playlist}</span>
+              <span>{formatPlaylistDisplay(record.playlist)}</span>
               <strong>{record.mmr}</strong>
             </li>
           {/each}

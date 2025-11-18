@@ -10,6 +10,7 @@
     sessionsQuery,
     weeklySkillSummaryQuery,
   } from './queries';
+  import { formatPlaylistDisplay } from './playlistDisplay';
 
   let sessions: Session[] = [];
   let selectedSession: Session | null = null;
@@ -105,7 +106,8 @@
     'Ranked 1v1',
     'Ranked 2v2',
     'Ranked 3v3',
-    'Solo Standard',
+    'Ranked 4v4',
+    'Casual',
     'Rumble',
     'Hoops',
     'Dropshot',
@@ -216,7 +218,8 @@
     mmrLoading = state.loading;
     mmrError = state.error;
     const records = state.data;
-    const uniquePlaylists = Array.from(new Set(records.map((record) => record.playlist))).sort();
+    const normalizedPlaylists = records.map((record) => formatPlaylistDisplay(record.playlist));
+    const uniquePlaylists = Array.from(new Set(normalizedPlaylists)).sort();
 
     if (!arraysEqual(playlists, uniquePlaylists)) {
       playlists = uniquePlaylists;
@@ -237,11 +240,12 @@
 
     const grouped: Record<string, MmrRecord[]> = {};
     for (const record of records) {
-      if (selectedPlaylists.length && !selectedPlaylists.includes(record.playlist)) {
+      const playlistKey = formatPlaylistDisplay(record.playlist);
+      if (selectedPlaylists.length && !selectedPlaylists.includes(playlistKey)) {
         continue;
       }
-      grouped[record.playlist] = grouped[record.playlist] ?? [];
-      grouped[record.playlist].push(record);
+      grouped[playlistKey] = grouped[playlistKey] ?? [];
+      grouped[playlistKey].push(record);
     }
 
     for (const playlist of Object.keys(grouped)) {
@@ -391,7 +395,7 @@
     );
     mmrRecordsForCsv.forEach((record) => {
       rows.push([
-        record.playlist,
+        formatPlaylistDisplay(record.playlist),
         record.timestamp,
         String(record.mmr),
         String(record.gamesPlayedDiff),

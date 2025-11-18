@@ -1,5 +1,6 @@
 const path = require('path');
 const Database = require('better-sqlite3');
+const { normalizePlaylist } = require('./playlist-normalize');
 
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'rocket_trainer.db');
 const db = new Database(dbPath);
@@ -208,6 +209,9 @@ const clearSkillsStmt = db.prepare('DELETE FROM skills;');
 const insertStmt = db.prepare(
   'INSERT INTO mmr_logs (timestamp, playlist, mmr, games_played_diff, source) VALUES (?, ?, ?, ?, ?);'
 );
+const selectSnapshotCasualStmt = db.prepare(
+  'SELECT COUNT(*) AS count FROM mmr_logs WHERE playlist = ? AND timestamp = ? AND source = ?;'
+);
 const selectStmt = db.prepare(
   'SELECT id, timestamp, playlist, mmr, games_played_diff AS gamesPlayedDiff, source FROM mmr_logs ORDER BY timestamp ASC;'
 );
@@ -224,7 +228,19 @@ const insertFavoriteStmt = db.prepare('INSERT INTO bakkes_favorites (user_id, na
 const clearFavoritesStmt = db.prepare('DELETE FROM bakkes_favorites;');
 
 function saveMmrLog({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakkes' }) {
-  insertStmt.run(timestamp, playlist, mmr, gamesPlayedDiff, source || 'bakkes');
+  const resolvedSource = source || 'bakkes';
+  if (resolvedSource === 'bakkes_snapshot' && playlist === 'Casual') {
+    const { count } = selectSnapshotCasualStmt.get(playlist, timestamp, resolvedSource);
+    if (count > 0) {
+      return;
+    }
+  }
+
+  insertStmt.run(timestamp, playlist, mmr, gamesPlayedDiff, resolvedSource);
+}
+
+function insertRawMmrRecord({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakkes' }) {
+  insertStmt.run(timestamp, playlist, mmr, gamesPlayedDiff, source);
 }
 
 function getMmrLogById(id) {
@@ -331,6 +347,19 @@ function deleteMmrLog(id) {
   }
 }
 
+function matchesPlaylistFilter(recordPlaylist, requestedPlaylist, normalizedRequest) {
+  if (!requestedPlaylist) {
+    return true;
+  }
+
+  if (normalizedRequest) {
+    const normalizedRecord = normalizePlaylist(recordPlaylist);
+    return normalizedRecord === normalizedRequest;
+  }
+
+  return recordPlaylist === requestedPlaylist;
+}
+
 function deleteMmrLogs({ playlist, from, to } = {}) {
   if (!playlist && !from && !to) {
     throw new Error('at least one filter (playlist, from, to) is required');
@@ -338,10 +367,6 @@ function deleteMmrLogs({ playlist, from, to } = {}) {
 
   const conditions = [];
   const params = [];
-  if (playlist) {
-    conditions.push('playlist = ?');
-    params.push(playlist);
-  }
 
   if (from) {
     conditions.push('timestamp >= ?');
@@ -354,9 +379,27 @@ function deleteMmrLogs({ playlist, from, to } = {}) {
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const query = `DELETE FROM mmr_logs ${whereClause};`;
-  const info = db.prepare(query).run(...params);
-  return info.changes || 0;
+
+  if (!playlist) {
+    const query = `DELETE FROM mmr_logs ${whereClause};`;
+    const info = db.prepare(query).run(...params);
+    return info.changes || 0;
+  }
+
+  const selectQuery = `SELECT id, playlist FROM mmr_logs ${whereClause};`;
+  const rows = db.prepare(selectQuery).all(...params);
+  const normalizedPlaylist = normalizePlaylist(playlist);
+  const rowsToDelete = rows.filter((row) => matchesPlaylistFilter(row.playlist, playlist, normalizedPlaylist));
+
+  if (!rowsToDelete.length) {
+    return 0;
+  }
+
+  const ids = rowsToDelete.map((row) => row.id);
+  const placeholders = ids.map(() => '?').join(', ');
+  const deleteStmt = db.prepare(`DELETE FROM mmr_logs WHERE id IN (${placeholders});`);
+  const info = deleteStmt.run(...ids);
+  return info.changes || rowsToDelete.length;
 }
 
 function getFavoritesByUser(userId) {
@@ -825,6 +868,7 @@ module.exports = {
   getMmrLogById,
   updateMmrLog,
   deleteMmrLogs,
+  insertRawMmrRecord,
   getFavoritesByUser,
   addFavoriteForUser,
   clearFavorites,

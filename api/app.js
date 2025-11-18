@@ -73,9 +73,14 @@ app.post('/api/mmr-log', (req, res) => {
     return res.status(400).json({ error: errors.join('. ') });
   }
 
+  const normalizedPlaylist = normalizePlaylist(playlist);
+  if (!normalizedPlaylist) {
+    return res.status(400).json({ error: 'unsupported playlist' });
+  }
+
   saveMmrLog({
     timestamp,
-    playlist: normalizePlaylist(playlist),
+    playlist: normalizedPlaylist,
     mmr,
     gamesPlayedDiff,
     source,
@@ -139,7 +144,19 @@ app.patch('/api/mmr/:id', (req, res) => {
   }
 
   try {
-    const updated = updateMmrLog({ id, timestamp, playlist: normalizePlaylist(playlist), mmr: mmrNum, gamesPlayedDiff: gamesPlayedDiffNum, source });
+    const normalizedPlaylist = normalizePlaylist(playlist);
+    if (!normalizedPlaylist) {
+      return res.status(400).json({ error: 'unsupported playlist' });
+    }
+
+    const updated = updateMmrLog({
+      id,
+      timestamp,
+      playlist: normalizedPlaylist,
+      mmr: mmrNum,
+      gamesPlayedDiff: gamesPlayedDiffNum,
+      source,
+    });
     res.json(updated);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update mmr record';
