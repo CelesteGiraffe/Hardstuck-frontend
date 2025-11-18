@@ -11,6 +11,7 @@
     weeklySkillSummaryQuery,
   } from './queries';
   import { formatPlaylistDisplay } from './playlistDisplay';
+  import { onServerUpdate } from './serverUpdates';
 
   let sessions: Session[] = [];
   let selectedSession: Session | null = null;
@@ -257,7 +258,15 @@
   }
 
   onMount(() => {
+    const unsubscribe = onServerUpdate((event) => {
+      if (event?.type === 'mmr-log') {
+        void refreshHistoryData();
+      }
+    });
     void refreshHistoryData();
+    return () => {
+      unsubscribe();
+    };
   });
 
   async function refreshHistoryData() {

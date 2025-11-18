@@ -26,12 +26,62 @@ const {
 
 const app = express();
 
+const SSE_HEARTBEAT_MS = 25 * 1000;
+const sseClients = new Set();
+const sseHeartbeats = new Map();
+
+function removeSseClient(res) {
+  sseClients.delete(res);
+  const heartbeat = sseHeartbeats.get(res);
+  if (heartbeat) {
+    clearInterval(heartbeat);
+    sseHeartbeats.delete(res);
+  }
+}
+
+function broadcastServerUpdate(payload) {
+  const message = JSON.stringify(payload);
+  for (const client of [...sseClients]) {
+    try {
+      client.write('event: update\n');
+      client.write(`data: ${message}\n\n`);
+    } catch (error) {
+      removeSseClient(client);
+    }
+  }
+}
+
 app.use(express.json());
 
 const { normalizePlaylist } = require('./playlist-normalize');
 
 app.get('/api/health', (_, res) => {
   res.json({ ok: true });
+});
+
+app.get('/api/updates', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+  res.flushHeaders();
+  res.write('retry: 10000\n\n');
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': keep-alive\n\n');
+    } catch (error) {
+      removeSseClient(res);
+    }
+  }, SSE_HEARTBEAT_MS);
+
+  sseHeartbeats.set(res, heartbeat);
+  sseClients.add(res);
+
+  req.on('close', () => {
+    removeSseClient(res);
+  });
 });
 
 app.get('/api/v1/bakkes/favorites', (req, res) => {
@@ -86,6 +136,14 @@ app.post('/api/mmr-log', (req, res) => {
     source,
   });
 
+  broadcastServerUpdate({
+    type: 'mmr-log',
+    action: 'create',
+    playlist: normalizedPlaylist,
+    source: source ?? null,
+    timestamp,
+  });
+
   res.status(201).json({ saved: true });
 });
 
@@ -103,6 +161,12 @@ app.delete('/api/mmr/:id', (req, res) => {
 
   try {
     deleteMmrLog(id);
+
+    broadcastServerUpdate({
+      type: 'mmr-log',
+      action: 'delete',
+      id,
+    });
     res.status(204).end();
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to delete mmr record';
@@ -157,6 +221,14 @@ app.patch('/api/mmr/:id', (req, res) => {
       gamesPlayedDiff: gamesPlayedDiffNum,
       source,
     });
+
+    broadcastServerUpdate({
+      type: 'mmr-log',
+      action: 'update',
+      id: updated.id,
+      playlist: normalizedPlaylist,
+      source: source ?? null,
+    });
     res.json(updated);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update mmr record';
@@ -177,6 +249,13 @@ app.delete('/api/mmr', (req, res) => {
 
   try {
     const deleted = deleteMmrLogs({ playlist, from, to });
+
+    broadcastServerUpdate({
+      type: 'mmr-log',
+      action: 'bulk-delete',
+      filters: { playlist, from, to },
+      deleted,
+    });
     res.status(200).json({ deleted });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to delete mmr records';

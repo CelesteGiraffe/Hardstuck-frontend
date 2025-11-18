@@ -27,11 +27,14 @@ const initialProfileData: ProfileResourceData = {
   progress: [],
 };
 
+const PROFILE_REFRESH_INTERVAL_MS = 60 * 1000;
+
 const profileResource = createResourceStore<ProfileResourceData, void>(
   () => api.getProfile(),
   {
     initialData: initialProfileData,
     label: 'profile',
+    refreshIntervalMs: PROFILE_REFRESH_INTERVAL_MS,
   }
 );
 
