@@ -26,7 +26,7 @@ describe('MMR log endpoints', () => {
   it('stores logs and returns them on GET', async () => {
     const payload = {
       timestamp: '2025-11-13T00:00:00Z',
-      playlist: 'Standard',
+      playlist: 'Ranked 3v3',
       mmr: 2100,
       gamesPlayedDiff: 3,
       source: 'bakkes',
@@ -70,7 +70,7 @@ describe('MMR log endpoints', () => {
   it('returns all stored records', async () => {
     const base = {
       timestamp: '2025-11-13T00:00:00Z',
-      playlist: 'Standard',
+      playlist: 'Ranked 3v3',
       mmr: 2100,
       gamesPlayedDiff: 3,
       source: 'bakkes',
@@ -185,7 +185,7 @@ describe('MMR filters', () => {
   it('filters records by playlist', async () => {
     const base = {
       timestamp: '2025-11-13T00:00:00Z',
-      playlist: 'Standard',
+      playlist: 'Ranked 3v3',
       mmr: 2050,
       gamesPlayedDiff: 2,
       source: 'bakkes',
@@ -194,13 +194,12 @@ describe('MMR filters', () => {
     await request(app).post('/api/mmr-log').send(base).set('Content-Type', 'application/json');
     await request(app)
       .post('/api/mmr-log')
-      .send({ ...base, playlist: 'Doubles', timestamp: '2025-11-13T00:15:00Z' })
+      .send({ ...base, playlist: 'Ranked 2v2', timestamp: '2025-11-13T00:15:00Z' })
       .set('Content-Type', 'application/json');
-
-    const response = await request(app).get('/api/mmr?playlist=Standard');
+    const response = await request(app).get('/api/mmr?playlist=Ranked%203v3');
     expect(response.statusCode).toBe(200);
     expect(response.body).toHaveLength(1);
-    expect(response.body[0].playlist).toBe('Standard');
+    expect(response.body[0].playlist).toBe('Ranked 3v3');
   });
 
   it('filters records by date range', async () => {

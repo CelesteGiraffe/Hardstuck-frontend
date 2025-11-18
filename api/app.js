@@ -28,6 +28,8 @@ const app = express();
 
 app.use(express.json());
 
+const { normalizePlaylist } = require('./playlist-normalize');
+
 app.get('/api/health', (_, res) => {
   res.json({ ok: true });
 });
@@ -73,7 +75,7 @@ app.post('/api/mmr-log', (req, res) => {
 
   saveMmrLog({
     timestamp,
-    playlist,
+    playlist: normalizePlaylist(playlist),
     mmr,
     gamesPlayedDiff,
     source,
@@ -137,7 +139,7 @@ app.patch('/api/mmr/:id', (req, res) => {
   }
 
   try {
-    const updated = updateMmrLog({ id, timestamp, playlist, mmr: mmrNum, gamesPlayedDiff: gamesPlayedDiffNum, source });
+    const updated = updateMmrLog({ id, timestamp, playlist: normalizePlaylist(playlist), mmr: mmrNum, gamesPlayedDiff: gamesPlayedDiffNum, source });
     res.json(updated);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update mmr record';

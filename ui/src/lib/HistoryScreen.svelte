@@ -101,6 +101,19 @@
   let manualError: string | null = null;
   let manualSuccess: string | null = null;
   let manualPlaylistValue = '';
+  const CANONICAL_PLAYLISTS = [
+    'Ranked 1v1',
+    'Ranked 2v2',
+    'Ranked 3v3',
+    'Solo Standard',
+    'Rumble',
+    'Hoops',
+    'Dropshot',
+    'Snow Day',
+    'Tournament',
+    'Other',
+  ];
+  let manualSelectedPlaylist: string = '';
   let latestPluginRecord: MmrRecord | null = null;
   let dataStale = false;
   let exportMessage: string | null = null;
@@ -254,7 +267,10 @@
 
   async function submitManualMmr(event: Event) {
     event.preventDefault();
-    const playlistValue = playlists.length && selectedPlaylist ? selectedPlaylist : manualPlaylistValue.trim();
+    // Prefer the manual dropdown value (canonical list). If 'Other' is chosen, use free-text.
+    const playlistValue = manualSelectedPlaylist
+      ? (manualSelectedPlaylist === 'Other' ? manualPlaylistValue.trim() : manualSelectedPlaylist)
+      : manualPlaylistValue.trim();
     if (!playlistValue) {
       manualError = 'Playlist is required';
       return;
@@ -284,6 +300,7 @@
       manualMmrValue = '';
       manualGamesDiff = '1';
       manualPlaylistValue = '';
+      manualSelectedPlaylist = '';
       const filters = buildMmrFilters();
       await mmrLogQuery.refresh({ from: filters.from, to: filters.to });
     } catch (err) {
@@ -691,18 +708,19 @@
 
     <form class="manual-mmr-form" on:submit|preventDefault={submitManualMmr}>
       <div class="manual-mmr-fields">
-        {#if playlists.length}
+        <label>
+          Playlist
+          <select bind:value={manualSelectedPlaylist} disabled={manualSubmitting}>
+            <option value=''>-- select --</option>
+            {#each CANONICAL_PLAYLISTS as cp}
+              <option value={cp}>{cp}</option>
+            {/each}
+          </select>
+        </label>
+
+        {#if manualSelectedPlaylist === 'Other'}
           <label>
-            Playlist
-            <select value={selectedPlaylist ?? ''} on:change={handlePlaylistChange} disabled={manualSubmitting}>
-              {#each playlists as playlist}
-                <option value={playlist}>{playlist}</option>
-              {/each}
-            </select>
-          </label>
-        {:else}
-          <label>
-            Playlist
+            Playlist (other)
             <input
               placeholder="e.g. Standard"
               type="text"
