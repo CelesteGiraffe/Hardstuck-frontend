@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import HomeScreen from './lib/HomeScreen.svelte';
   import PresetsScreen from './lib/PresetsScreen.svelte';
   import TimerScreen from './lib/TimerScreen.svelte';
@@ -13,8 +14,14 @@
   import { setupChecklistState } from './lib/checklistState';
   import { pluginInstallUrl } from './lib/constants';
   import { profileStore } from './lib/profileStore';
+  import { profilePlaylistStore } from './lib/profilePlaylistStore';
   import { formatPlaylistDisplay } from './lib/playlistDisplay';
-  import { isRankedPlaylist, resolveRankImageSrc } from './lib/rankThresholds';
+  import {
+    rankablePlaylists,
+    loadRankThresholds,
+    findRankForPlaylist,
+  } from './lib/rankThresholds';
+  import type { PlaylistOption, PlaylistRankingTable, RankRange } from './lib/rankThresholds';
 
   type Screen = {
     id: 'home' | 'presetRunner' | 'skills' | 'presets' | 'history' | 'profile';
@@ -47,27 +54,43 @@
   const profileSettingsStore = profileStore.settings;
   let profileDisplayName = 'Trainer';
   let profileAvatarUrl = '/default.png';
-  let lastMmrRecord: MmrRecord | null = null;
+  const defaultPlaylistOption: PlaylistOption =
+    rankablePlaylists[0] ?? { label: 'Ranked 1v1', canonical: 'Ranked 1v1', csvKey: '1v1' };
+  let rankThresholds: PlaylistRankingTable | null = null;
+  let rankInfo: RankRange | null = null;
+  let selectedPlaylistCanonical = defaultPlaylistOption.canonical;
+  let selectedPlaylistOption = defaultPlaylistOption;
+  let lastSelectedRecord: MmrRecord | null = null;
   let rankLabel = 'Rank pending';
-  let rankImageSrc = '/default.png';
+  let rankImageSrc = '/ranks/norank.png';
+
+  onMount(() => {
+    loadRankThresholds().then((table) => {
+      rankThresholds = table;
+    });
+  });
 
   $: profileDisplayName = $profileSettingsStore.name?.trim() || 'Trainer';
   $: profileAvatarUrl = $profileSettingsStore.avatarUrl?.trim() || '/default.png';
+  $: selectedPlaylistCanonical = $profilePlaylistStore ?? defaultPlaylistOption.canonical;
+  $: selectedPlaylistOption =
+    rankablePlaylists.find((option) => option.canonical === selectedPlaylistCanonical) ??
+    defaultPlaylistOption;
   $: {
-    const records = $mmrLogQuery.data;
-    const chronologically = [...records].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-    lastMmrRecord = chronologically[chronologically.length - 1] ?? null;
+    const filtered = $mmrLogQuery.data.filter((record) => record.playlist === selectedPlaylistOption.canonical);
+    lastSelectedRecord = filtered[filtered.length - 1] ?? null;
   }
-  $: formattedPlaylist = formatPlaylistDisplay(lastMmrRecord?.playlist);
-  $: hasRankedBadge = lastMmrRecord ? isRankedPlaylist(lastMmrRecord.playlist) : false;
-  $: rankLabel = lastMmrRecord
-    ? hasRankedBadge
-      ? `${formattedPlaylist} · ${lastMmrRecord.mmr ?? '—'} MMR`
+  $: rankInfo =
+    lastSelectedRecord && rankThresholds
+      ? findRankForPlaylist(lastSelectedRecord.mmr, selectedPlaylistOption.csvKey, rankThresholds)
+      : null;
+  $: rankImageSrc = rankInfo ? `/ranks/${rankInfo.imageName}.png` : '/ranks/norank.png';
+  $: formattedPlaylist = formatPlaylistDisplay(selectedPlaylistOption.canonical);
+  $: rankLabel = lastSelectedRecord
+    ? rankInfo
+      ? `${formattedPlaylist} · ${lastSelectedRecord.mmr ?? '—'} MMR`
       : `${formattedPlaylist} · Unranked`
-    : 'Rank pending';
-  $: rankImageSrc = resolveRankImageSrc(lastMmrRecord?.playlist);
+    : `${formattedPlaylist} · Rank pending`;
 </script>
 
 <div class="app-shell">

@@ -3,6 +3,7 @@
   import { profileStore } from './profileStore';
   import { useSkills } from './useSkills';
   import { mmrLogQuery } from './queries';
+  import { profilePlaylistStore } from './profilePlaylistStore';
   import GoalProgressCard from './components/GoalProgressCard.svelte';
   import {
     rankablePlaylists,
@@ -24,14 +25,17 @@
   const skills = useSkills();
   const playlistOptions: PlaylistOption[] = rankablePlaylists;
   let selectedPlaylistKey: PlaylistOption['csvKey'] = playlistOptions[0]?.csvKey ?? '1v1';
-  let manualPlaylistSelection = false;
-  let initialSelectionApplied = false;
   let latestRecord: MmrRecord | null = null;
   let playlistRecords: MmrRecord[] = [];
   let rankThresholds: PlaylistRankingTable | null = null;
   let rankInfo: RankRange | null = null;
   let rankImageSrc = '/ranks/norank.png';
   let rankLoadError: string | null = null;
+
+  $: selectedPlaylistKey =
+    playlistOptions.find(
+      (option) => option.canonical === ($profilePlaylistStore ?? playlistOptions[0]?.canonical)
+    )?.csvKey ?? playlistOptions[0]?.csvKey ?? '1v1';
 
   type SettingsDraft = {
     name: string;
@@ -252,14 +256,6 @@
     playlistRecords = filtered;
     latestRecord = filtered[filtered.length - 1] ?? null;
   }
-  $: if (!manualPlaylistSelection && !initialSelectionApplied && $mmrLogQuery.data.length > 0) {
-    const latestFromLog = $mmrLogQuery.data[$mmrLogQuery.data.length - 1];
-    const matching = playlistOptions.find((option) => option.canonical === latestFromLog.playlist);
-    if (matching) {
-      selectedPlaylistKey = matching.csvKey;
-    }
-    initialSelectionApplied = true;
-  }
   $: rankInfo =
     latestRecord && rankThresholds
       ? findRankForPlaylist(latestRecord.mmr, selectedPlaylist.csvKey, rankThresholds)
@@ -277,8 +273,10 @@
   function handlePlaylistChange(event: Event) {
     const select = event.currentTarget as HTMLSelectElement;
     const value = select.value as PlaylistOption['csvKey'];
-    selectedPlaylistKey = value;
-    manualPlaylistSelection = true;
+    const matchingOption = playlistOptions.find((option) => option.csvKey === value);
+    if (matchingOption) {
+      profilePlaylistStore.set(matchingOption.canonical);
+    }
   }
 </script>
 
@@ -291,11 +289,7 @@
       </div>
       <label class="rank-select" for="profile-playlist-select">
         <span>Playlist</span>
-        <select
-          id="profile-playlist-select"
-          bind:value={selectedPlaylistKey}
-          on:change={handlePlaylistChange}
-        >
+        <select id="profile-playlist-select" value={selectedPlaylistKey} on:change={handlePlaylistChange}>
           {#each playlistOptions as option}
             <option value={option.csvKey}>{option.label}</option>
           {/each}
