@@ -1,13 +1,37 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { profileStore } from './profileStore';
   import { useSkills } from './useSkills';
+  import { mmrLogQuery } from './queries';
   import GoalProgressCard from './components/GoalProgressCard.svelte';
-  import type { GoalProgress, Skill, TrainingGoal, TrainingGoalPayload } from './api';
+  import {
+    rankablePlaylists,
+    loadRankThresholds,
+    findRankForPlaylist,
+  } from './rankThresholds';
+  import type {
+    GoalProgress,
+    MmrRecord,
+    Skill,
+    TrainingGoal,
+    TrainingGoalPayload,
+  } from './api';
+  import type { PlaylistOption, PlaylistRankingTable, RankRange } from './rankThresholds';
 
   const settingsStore = profileStore.settings;
   const goalsStore = profileStore.goals;
   const progressStore = profileStore.progressMap;
   const skills = useSkills();
+  const playlistOptions: PlaylistOption[] = rankablePlaylists;
+  let selectedPlaylistKey: PlaylistOption['csvKey'] = playlistOptions[0]?.csvKey ?? '1v1';
+  let manualPlaylistSelection = false;
+  let initialSelectionApplied = false;
+  let latestRecord: MmrRecord | null = null;
+  let playlistRecords: MmrRecord[] = [];
+  let rankThresholds: PlaylistRankingTable | null = null;
+  let rankInfo: RankRange | null = null;
+  let rankImageSrc = '/ranks/norank.png';
+  let rankLoadError: string | null = null;
 
   type SettingsDraft = {
     name: string;
@@ -211,6 +235,37 @@
   let progressSnapshot: Record<number, GoalProgress> = {};
   $: progressSnapshot = $progressStore;
 
+  onMount(() => {
+    loadRankThresholds()
+      .then((table) => {
+        rankThresholds = table;
+      })
+      .catch((error) => {
+        rankLoadError = error instanceof Error ? error.message : 'Unable to load rank data';
+      });
+  });
+
+  $: selectedPlaylist =
+    playlistOptions.find((option) => option.csvKey === selectedPlaylistKey) ?? playlistOptions[0];
+  $: {
+    const filtered = $mmrLogQuery.data.filter((record) => record.playlist === selectedPlaylist.canonical);
+    playlistRecords = filtered;
+    latestRecord = filtered[filtered.length - 1] ?? null;
+  }
+  $: if (!manualPlaylistSelection && !initialSelectionApplied && $mmrLogQuery.data.length > 0) {
+    const latestFromLog = $mmrLogQuery.data[$mmrLogQuery.data.length - 1];
+    const matching = playlistOptions.find((option) => option.canonical === latestFromLog.playlist);
+    if (matching) {
+      selectedPlaylistKey = matching.csvKey;
+    }
+    initialSelectionApplied = true;
+  }
+  $: rankInfo =
+    latestRecord && rankThresholds
+      ? findRankForPlaylist(latestRecord.mmr, selectedPlaylist.csvKey, rankThresholds)
+      : null;
+  $: rankImageSrc = rankInfo ? `/ranks/${rankInfo.imageName}.png` : '/ranks/norank.png';
+
   function getSkillName(skillId: number | null) {
     if (!skillId) {
       return null;
@@ -218,9 +273,64 @@
     const match = skillList.find((skill) => skill.id === skillId);
     return match?.name ?? `Skill #${skillId}`;
   }
+
+  function handlePlaylistChange(event: Event) {
+    const select = event.currentTarget as HTMLSelectElement;
+    const value = select.value as PlaylistOption['csvKey'];
+    selectedPlaylistKey = value;
+    manualPlaylistSelection = true;
+  }
 </script>
 
 <main class="screen-content profile-screen">
+  <section class="glass-card profile-rank-card">
+    <div class="profile-section-header">
+      <div>
+        <h2>Rank overview</h2>
+        <p>Pick a playlist to highlight in your profile.</p>
+      </div>
+      <label class="rank-select" for="profile-playlist-select">
+        <span>Playlist</span>
+        <select
+          id="profile-playlist-select"
+          bind:value={selectedPlaylistKey}
+          on:change={handlePlaylistChange}
+        >
+          {#each playlistOptions as option}
+            <option value={option.csvKey}>{option.label}</option>
+          {/each}
+        </select>
+      </label>
+    </div>
+    <div class="rank-summary">
+      <div class="rank-image">
+        <img
+          src={rankImageSrc}
+          alt={`Rank badge for ${rankInfo?.rankName ?? 'Unranked'}`}
+          loading="lazy"
+        />
+      </div>
+      <div class="rank-details">
+        {#if latestRecord}
+          <p class="rank-label">{rankInfo?.rankName ?? 'Unranked'}</p>
+          <p class="rank-mmr">MMR: {latestRecord.mmr.toLocaleString()}</p>
+          {#if rankInfo}
+            <p class="rank-range">
+              Range: {rankInfo.min.toLocaleString()} – {rankInfo.max.toLocaleString()}
+            </p>
+          {/if}
+        {:else}
+          <p class="rank-label">No MMR logs for this playlist yet.</p>
+          <p class="muted-note">Log a session with the plugin to capture your rating.</p>
+        {/if}
+        {#if rankLoadError}
+          <p class="form-feedback error" role="status">{rankLoadError}</p>
+        {:else if !rankThresholds && latestRecord}
+          <p class="muted-note">Loading rank data…</p>
+        {/if}
+      </div>
+    </div>
+  </section>
   <section class="glass-card profile-settings-card">
     <div class="profile-section-header">
       <div>
@@ -494,6 +604,79 @@
 
     .form-actions {
       justify-content: flex-start;
+    }
+  }
+
+  .profile-rank-card {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .rank-select {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+  }
+
+  .rank-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .rank-select select {
+    min-width: 200px;
+  }
+
+  .rank-image {
+    width: 128px;
+    height: 128px;
+    border-radius: 18px;
+    border: 1px solid var(--border-soft);
+    background: rgba(255, 255, 255, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.65rem;
+  }
+
+  .rank-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .rank-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .rank-label {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  .rank-mmr,
+  .rank-range {
+    margin: 0;
+    color: var(--muted-text);
+    font-size: 0.9rem;
+  }
+
+  @media (max-width: 640px) {
+    .rank-summary {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .rank-select select {
+      width: 100%;
     }
   }
 </style>

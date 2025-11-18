@@ -31,6 +31,7 @@
     getGoalRemainingMinutes,
   } from './formatters/goalProgress';
   import { formatPlaylistDisplay } from './playlistDisplay';
+  import { isRankedPlaylist, resolveRankImageSrc } from './rankThresholds';
 
   let apiHealthy: boolean | null = null;
   let healthChecking = false;
@@ -206,14 +207,14 @@
   $: profileSettings = $profileSettingsStore;
   $: profileDisplayName = profileSettings?.name?.trim() || 'Trainer';
   $: profileAvatarUrl = profileSettings?.avatarUrl?.trim() || '/default.png';
+  $: formattedPlaylist = formatPlaylistDisplay(lastMmrRecord?.playlist);
+  $: hasRankedBadge = lastMmrRecord ? isRankedPlaylist(lastMmrRecord.playlist) : false;
   $: rankLabel = lastMmrRecord
-    ? `${formatPlaylistDisplay(lastMmrRecord.playlist)} · ${lastMmrRecord.mmr ?? '—'} MMR`
+    ? hasRankedBadge
+      ? `${formattedPlaylist} · ${lastMmrRecord.mmr ?? '—'} MMR`
+      : `${formattedPlaylist} · Unranked`
     : 'Rank pending';
-  $: rankImageSrc = lastMmrRecord
-    ? `/rank-${String(formatPlaylistDisplay(lastMmrRecord.playlist) || 'default')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')}.png`
-    : '/default.png';
+  $: rankImageSrc = lastMmrRecord ? resolveRankImageSrc(lastMmrRecord.playlist) : '/default.png';
 
   $: trackEntries = $profileGoalsStore.map((goal) => {
     const progress = $profileProgressStore[goal.id] ?? null;

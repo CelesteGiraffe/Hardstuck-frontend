@@ -13,6 +13,8 @@
   import { setupChecklistState } from './lib/checklistState';
   import { pluginInstallUrl } from './lib/constants';
   import { profileStore } from './lib/profileStore';
+  import { formatPlaylistDisplay } from './lib/playlistDisplay';
+  import { isRankedPlaylist, resolveRankImageSrc } from './lib/rankThresholds';
 
   type Screen = {
     id: 'home' | 'presetRunner' | 'skills' | 'presets' | 'history' | 'profile';
@@ -58,12 +60,14 @@
     );
     lastMmrRecord = chronologically[chronologically.length - 1] ?? null;
   }
+  $: formattedPlaylist = formatPlaylistDisplay(lastMmrRecord?.playlist);
+  $: hasRankedBadge = lastMmrRecord ? isRankedPlaylist(lastMmrRecord.playlist) : false;
   $: rankLabel = lastMmrRecord
-    ? `${lastMmrRecord.playlist ?? 'Rank'} · ${lastMmrRecord.mmr ?? '—'} MMR`
+    ? hasRankedBadge
+      ? `${formattedPlaylist} · ${lastMmrRecord.mmr ?? '—'} MMR`
+      : `${formattedPlaylist} · Unranked`
     : 'Rank pending';
-  $: rankImageSrc = lastMmrRecord
-    ? `/rank-${String(lastMmrRecord.playlist ?? 'default').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`
-    : '/ranks/norank.png';
+  $: rankImageSrc = resolveRankImageSrc(lastMmrRecord?.playlist);
 </script>
 
 <div class="app-shell">
