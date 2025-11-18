@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { createMmrLog, deleteMmrRecord, deleteMmrRecords } from './api';
+  import { createMmrLog, deleteMmrRecord, deleteMmrRecords, updateMmrRecord } from './api';
   import type { Session, SessionBlock, SkillSummary, MmrRecord } from './api';
   import { useSkills } from './useSkills';
   import html2canvas from 'html2canvas';
@@ -108,6 +108,88 @@
   let exportLoading = false;
   let deleteFilterLoading = false;
   let deletingIds: number[] = [];
+  
+  let editingMmrId: number | null = null;
+  let editModel: { timestamp: string; mmr: string | number; gamesPlayedDiff: string | number; source: string } = {
+    timestamp: '',
+    mmr: '',
+    gamesPlayedDiff: '',
+    source: '',
+  };
+  let savingEdit = false;
+  let editError: string | null = null;
+
+  function toDateTimeLocal(iso?: string) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const mm = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    const hh = pad(d.getHours());
+    const min = pad(d.getMinutes());
+    return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+  }
+
+  function fromDateTimeLocal(value: string) {
+    // Treat as local and convert to ISO UTC string
+    if (!value) return new Date().toISOString();
+    const d = new Date(value);
+    return d.toISOString();
+  }
+
+  function startEdit(rec: MmrRecord) {
+    editingMmrId = rec.id;
+    editModel = {
+      timestamp: toDateTimeLocal(rec.timestamp),
+      mmr: String(rec.mmr),
+      gamesPlayedDiff: String(rec.gamesPlayedDiff),
+      source: rec.source ?? '',
+    };
+    editError = null;
+  }
+
+  function cancelEdit() {
+    editingMmrId = null;
+    editError = null;
+  }
+
+  async function saveEdit(rec: MmrRecord) {
+    if (!editingMmrId) return;
+    editError = null;
+    const timestampIso = fromDateTimeLocal(String(editModel.timestamp));
+    const mmrVal = Number(editModel.mmr);
+    const gamesVal = Number(editModel.gamesPlayedDiff);
+
+    if (!timestampIso) {
+      editError = 'timestamp is required';
+      return;
+    }
+
+    if (Number.isNaN(mmrVal) || Number.isNaN(gamesVal)) {
+      editError = 'MMR and games must be numbers';
+      return;
+    }
+
+    savingEdit = true;
+    try {
+      await updateMmrRecord(editingMmrId, {
+        timestamp: timestampIso,
+        playlist: rec.playlist,
+        mmr: mmrVal,
+        gamesPlayedDiff: gamesVal,
+        source: editModel.source,
+      });
+
+      const filters = buildMmrFilters();
+      await mmrLogQuery.refresh({ from: filters.from, to: filters.to });
+      editingMmrId = null;
+    } catch (err) {
+      editError = err instanceof Error ? err.message : 'Unable to save changes';
+    } finally {
+      savingEdit = false;
+    }
+  }
 
   function arraysEqual(a: string[], b: string[]) {
     if (a.length !== b.length) {
@@ -770,19 +852,66 @@
             <tbody>
               {#each mmrRecords as rec}
                 <tr>
-                  <td>{formatDate(rec.timestamp)}</td>
-                  <td>{rec.mmr}</td>
-                  <td>{rec.gamesPlayedDiff}</td>
-                  <td>{rec.source}</td>
                   <td>
-                    <button
-                      type="button"
-                      class="btn-danger"
-                      disabled={isDeleting(rec.id)}
-                      on:click={() => handleDeleteMmr(rec.id)}
-                    >
-                      {isDeleting(rec.id) ? 'Deleting…' : 'Delete'}
-                    </button>
+                    {#if editingMmrId === rec.id}
+                      <input type="datetime-local" bind:value={editModel.timestamp} />
+                    {:else}
+                      {formatDate(rec.timestamp)}
+                    {/if}
+                  </td>
+                  <td>
+                    {#if editingMmrId === rec.id}
+                      <input type="number" step="1" bind:value={editModel.mmr} />
+                    {:else}
+                      {rec.mmr}
+                    {/if}
+                  </td>
+                  <td>
+                    {#if editingMmrId === rec.id}
+                      <input type="number" step="1" bind:value={editModel.gamesPlayedDiff} />
+                    {:else}
+                      {rec.gamesPlayedDiff}
+                    {/if}
+                  </td>
+                  <td>
+                    {#if editingMmrId === rec.id}
+                      <input type="text" bind:value={editModel.source} />
+                    {:else}
+                      {rec.source}
+                    {/if}
+                  </td>
+                  <td>
+                    {#if editingMmrId === rec.id}
+                      <button type="button" class="btn-primary" on:click={() => saveEdit(rec)} disabled={savingEdit}>
+                        {savingEdit ? 'Saving…' : 'Save'}
+                      </button>
+                      <button type="button" class="btn-tertiary" on:click={cancelEdit} disabled={savingEdit}>
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        class="btn-danger"
+                        disabled={isDeleting(rec.id)}
+                        on:click={() => handleDeleteMmr(rec.id)}
+                      >
+                        {isDeleting(rec.id) ? 'Deleting…' : 'Delete'}
+                      </button>
+                      {#if editError}
+                        <div class="badge offline">{editError}</div>
+                      {/if}
+                    {:else}
+                      <button type="button" class="btn-tertiary" on:click={() => startEdit(rec)}>
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        class="btn-danger"
+                        disabled={isDeleting(rec.id)}
+                        on:click={() => handleDeleteMmr(rec.id)}
+                      >
+                        {isDeleting(rec.id) ? 'Deleting…' : 'Delete'}
+                      </button>
+                    {/if}
                   </td>
                 </tr>
               {/each}

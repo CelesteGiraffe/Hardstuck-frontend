@@ -211,6 +211,12 @@ const insertStmt = db.prepare(
 const selectStmt = db.prepare(
   'SELECT id, timestamp, playlist, mmr, games_played_diff AS gamesPlayedDiff, source FROM mmr_logs ORDER BY timestamp ASC;'
 );
+const selectMmrByIdStmt = db.prepare(
+  'SELECT id, timestamp, playlist, mmr, games_played_diff AS gamesPlayedDiff, source FROM mmr_logs WHERE id = ?;'
+);
+const updateMmrStmt = db.prepare(
+  'UPDATE mmr_logs SET timestamp = ?, playlist = ?, mmr = ?, games_played_diff = ?, source = ? WHERE id = ?;'
+);
 const deleteMmrStmt = db.prepare('DELETE FROM mmr_logs WHERE id = ?;');
 const clearStmt = db.prepare('DELETE FROM mmr_logs;');
 const selectFavoritesByUserStmt = db.prepare('SELECT name, code FROM bakkes_favorites WHERE user_id = ? ORDER BY id ASC;');
@@ -219,6 +225,50 @@ const clearFavoritesStmt = db.prepare('DELETE FROM bakkes_favorites;');
 
 function saveMmrLog({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakkes' }) {
   insertStmt.run(timestamp, playlist, mmr, gamesPlayedDiff, source || 'bakkes');
+}
+
+function getMmrLogById(id) {
+  const parsed = Number(id);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error('invalid mmr id');
+  }
+
+  return selectMmrByIdStmt.get(parsed) || null;
+}
+
+function updateMmrLog({ id, timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakkes' }) {
+  const parsed = Number(id);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error('invalid mmr id');
+  }
+
+  const errors = [];
+  if (!timestamp) {
+    errors.push('timestamp is required');
+  }
+
+  if (typeof playlist !== 'string' || playlist.trim().length === 0) {
+    errors.push('playlist must be a non-empty string');
+  }
+
+  if (typeof mmr !== 'number' || Number.isNaN(mmr)) {
+    errors.push('mmr must be a number');
+  }
+
+  if (typeof gamesPlayedDiff !== 'number' || Number.isNaN(gamesPlayedDiff)) {
+    errors.push('gamesPlayedDiff must be a number');
+  }
+
+  if (errors.length) {
+    throw new Error(errors.join('. '));
+  }
+
+  const info = updateMmrStmt.run(timestamp, playlist, mmr, gamesPlayedDiff, source || 'bakkes', parsed);
+  if (info.changes === 0) {
+    throw new Error('mmr record not found');
+  }
+
+  return selectMmrByIdStmt.get(parsed);
 }
 
 function getAllMmrLogs() {
@@ -772,6 +822,8 @@ module.exports = {
   getMmrLogs,
   clearMmrLogs,
   deleteMmrLog,
+  getMmrLogById,
+  updateMmrLog,
   deleteMmrLogs,
   getFavoritesByUser,
   addFavoriteForUser,

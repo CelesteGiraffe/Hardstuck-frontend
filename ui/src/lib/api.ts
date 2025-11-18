@@ -178,6 +178,21 @@ export async function deleteMmrRecord(id: number): Promise<void> {
   }
 }
 
+export async function updateMmrRecord(id: number, payload: MmrLogPayload): Promise<MmrRecord> {
+  const response = await fetch(buildUrl(`/api/mmr/${id}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to update MMR record');
+  }
+
+  return (await response.json()) as MmrRecord;
+}
+
 export async function deleteMmrRecords(filters: { playlist?: string; from?: string; to?: string } = {}): Promise<{ deleted: number } | void> {
   const params = new URLSearchParams();
   if (filters.playlist) params.set('playlist', filters.playlist);

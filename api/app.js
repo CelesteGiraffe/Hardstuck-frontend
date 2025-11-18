@@ -5,6 +5,7 @@ const {
   getAllMmrLogs,
   getMmrLogs,
   deleteMmrLog,
+  updateMmrLog,
   deleteMmrLogs,
   getAllSkills,
   upsertSkill,
@@ -99,6 +100,52 @@ app.delete('/api/mmr/:id', (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to delete mmr record';
     res.status(400).json({ error: message });
+  }
+});
+
+app.patch('/api/mmr/:id', (req, res) => {
+  const id = Number(req.params.id);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'invalid mmr id' });
+  }
+
+  const { timestamp, playlist, mmr, gamesPlayedDiff, source } = req.body;
+  const errors = [];
+
+  if (!timestamp) {
+    errors.push('timestamp is required');
+  }
+
+  if (typeof playlist !== 'string' || playlist.trim().length === 0) {
+    errors.push('playlist must be a non-empty string');
+  }
+
+  const mmrNum = Number(mmr);
+  const gamesPlayedDiffNum = Number(gamesPlayedDiff);
+
+  if (!Number.isFinite(mmrNum)) {
+    errors.push('mmr must be a number');
+  }
+
+  if (!Number.isFinite(gamesPlayedDiffNum)) {
+    errors.push('gamesPlayedDiff must be a number');
+  }
+
+  if (errors.length) {
+    return res.status(400).json({ error: errors.join('. ') });
+  }
+
+  try {
+    const updated = updateMmrLog({ id, timestamp, playlist, mmr: mmrNum, gamesPlayedDiff: gamesPlayedDiffNum, source });
+    res.json(updated);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to update mmr record';
+    if (message === 'mmr record not found') {
+      res.status(404).json({ error: message });
+    } else {
+      res.status(400).json({ error: message });
+    }
   }
 });
 
