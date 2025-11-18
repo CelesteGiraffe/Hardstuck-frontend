@@ -259,7 +259,7 @@
 
   onMount(() => {
     const unsubscribe = onServerUpdate((event) => {
-      if (event?.type === 'mmr-log') {
+      if (event?.type === 'mmr-log' || event?.type === 'session') {
         void refreshHistoryData();
       }
     });

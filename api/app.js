@@ -40,7 +40,11 @@ function removeSseClient(res) {
 }
 
 function broadcastServerUpdate(payload) {
-  const message = JSON.stringify(payload);
+  const payloadWithTimestamp = {
+    ...payload,
+    timestamp: new Date().toISOString(),
+  };
+  const message = JSON.stringify(payloadWithTimestamp);
   for (const client of [...sseClients]) {
     try {
       client.write('event: update\n');
@@ -507,6 +511,12 @@ app.post('/api/sessions', (req, res) => {
 
   try {
     const saved = saveSession({ startedTime, finishedTime, source, presetId, notes, blocks: normalizedBlocks });
+    broadcastServerUpdate({
+      type: 'session',
+      action: 'create',
+      sessionId: saved.id,
+      source,
+    });
     res.status(201).json(saved);
   } catch (error) {
     res.status(400).json({ error: error.message });

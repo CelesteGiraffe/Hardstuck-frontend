@@ -1,4 +1,4 @@
-import { mmrLogQuery } from './queries';
+import { mmrLogQuery, sessionsQuery, weeklySkillSummaryQuery } from './queries';
 
 type UpdateListener = (event: ServerUpdateEvent) => void;
 
@@ -25,11 +25,15 @@ export function onServerUpdate(listener: UpdateListener) {
 function parseUpdateMessage(rawData: string): ServerUpdateEvent {
   try {
     const parsed = JSON.parse(rawData);
-    if (parsed && typeof parsed === 'object' && typeof parsed.type === 'string') {
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const { type, timestamp, ...rest } = parsed as Record<string, unknown>;
+      const eventType = typeof type === 'string' ? type : 'update';
+      const eventTimestamp = typeof timestamp === 'string' ? timestamp : new Date().toISOString();
+      const payload = Object.keys(rest).length ? (rest as Record<string, unknown>) : null;
       return {
-        type: parsed.type,
-        payload: parsed.payload ?? null,
-        timestamp: parsed.timestamp ?? new Date().toISOString(),
+        type: eventType,
+        payload,
+        timestamp: eventTimestamp,
       };
     }
   } catch (error) {
@@ -53,6 +57,11 @@ if (typeof window !== 'undefined' && 'EventSource' in window) {
     emitUpdate(update);
     if (update.type.startsWith('mmr-')) {
       void mmrLogQuery.refresh(undefined, { force: true });
+    }
+
+    if (update.type === 'session') {
+      void sessionsQuery.refresh(undefined, { force: true });
+      void weeklySkillSummaryQuery.refresh(undefined, { force: true });
     }
   });
 
