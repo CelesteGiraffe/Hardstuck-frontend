@@ -962,14 +962,41 @@
   .btn-tertiary {
     border-radius: 8px;
     padding: 0.45rem 1rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.25);
     color: #fff;
     cursor: pointer;
-    transition: border-color 0.2s, color 0.2s;
+    transition: all 0.2s;
+    font-weight: 500;
+  }
+
+  .btn-tertiary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.35);
   }
 
   .btn-tertiary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-danger {
+    border-radius: 8px;
+    padding: 0.45rem 1rem;
+    background: #dc2626;
+    border: 1px solid #991b1b;
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: #b91c1c;
+    border-color: #7f1d1d;
+  }
+
+  .btn-danger:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
@@ -1064,11 +1091,12 @@
   }
 
   .playlist-comparison h3 {
-    margin: 0 0 0.35rem;
+    margin: 0 0 0.75rem;
     font-size: 0.85rem;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.65);
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 600;
   }
 
   .comparison-grid {
@@ -1091,11 +1119,12 @@
     align-items: center;
     font-size: 0.85rem;
     margin-bottom: 0.4rem;
+    color: rgba(255, 255, 255, 0.9);
   }
 
   .comparison-latest {
     font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(255, 255, 255, 0.85);
   }
 
   .comparison-chart {
@@ -1108,7 +1137,7 @@
     display: flex;
     justify-content: space-between;
     font-size: 0.7rem;
-    color: rgba(255, 255, 255, 0.6);
+    color: rgba(255, 255, 255, 0.7);
   }
 
   .comparison-empty {
@@ -1116,7 +1145,7 @@
     padding: 0.75rem 0;
     font-size: 0.75rem;
     text-align: center;
-    color: rgba(255, 255, 255, 0.6);
+    color: rgba(255, 255, 255, 0.7);
   }
 
   .history-mmr h2 {
@@ -1174,4 +1203,54 @@
     font-size: 0.85rem;
     color: var(--muted-text, #7a7a7a);
   }
-</style>
+
+  .mmr-records {
+    margin-top: 1.5rem;
+  }
+
+  .mmr-records h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .mmr-record-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+
+  .mmr-record-table thead {
+    background: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  .mmr-record-table th {
+    padding: 0.65rem 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .mmr-record-table td {
+    padding: 0.65rem 0.75rem;
+    color: rgba(255, 255, 255, 0.85);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .mmr-record-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .mmr-record-table td:last-child {
+    text-align: right;
+  }
+
+  .mmr-record-table .btn-danger {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.75rem;
+  }</style>
