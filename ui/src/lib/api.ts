@@ -88,6 +88,42 @@ export type GoalProgress = {
   periodTo: string | null;
 };
 
+export type BakkesmodHistoryStatusFilters = {
+  playlist: string | null;
+  mmrFrom: string | null;
+  mmrTo: string | null;
+  sessionStart: string | null;
+  sessionEnd: string | null;
+};
+
+export type BakkesmodHistoryStatus = {
+  receivedAt: string;
+  generatedAt: string;
+  mmrEntries: number;
+  trainingSessions: number;
+  lastMmrTimestamp: string | null;
+  lastTrainingTimestamp: string | null;
+  mmrLimit: number;
+  sessionLimit: number;
+  filters: BakkesmodHistoryStatusFilters;
+};
+
+export type BakkesmodHistoryPayload = {
+  mmrHistory: MmrRecord[];
+  trainingHistory: Session[];
+  status: BakkesmodHistoryStatus;
+};
+
+export type BakkesmodHistoryFilters = {
+  mmrLimit?: number;
+  sessionLimit?: number;
+  playlist?: string;
+  mmrFrom?: string;
+  mmrTo?: string;
+  sessionStart?: string;
+  sessionEnd?: string;
+};
+
 export type PresetBlock = {
   id: number;
   presetId: number;
@@ -152,6 +188,27 @@ export async function getMmrRecords(filters: { playlist?: string; from?: string;
 
   const data = (await response.json()) as MmrRecord[];
   return data;
+}
+
+export async function getBakkesmodHistory(filters: BakkesmodHistoryFilters = {}): Promise<BakkesmodHistoryPayload> {
+  const params = new URLSearchParams();
+  if (filters.mmrLimit !== undefined) params.set('mmrLimit', String(filters.mmrLimit));
+  if (filters.sessionLimit !== undefined) params.set('sessionLimit', String(filters.sessionLimit));
+  if (filters.playlist) params.set('playlist', filters.playlist);
+  if (filters.mmrFrom) params.set('mmrFrom', filters.mmrFrom);
+  if (filters.mmrTo) params.set('mmrTo', filters.mmrTo);
+  if (filters.sessionStart) params.set('sessionStart', filters.sessionStart);
+  if (filters.sessionEnd) params.set('sessionEnd', filters.sessionEnd);
+
+  const path = `/api/bakkesmod/history${params.toString() ? `?${params}` : ''}`;
+  const response = await fetch(buildUrl(path));
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to load BakkesMod history');
+  }
+
+  return (await response.json()) as BakkesmodHistoryPayload;
 }
 
 export async function createMmrLog(payload: MmrLogPayload): Promise<void> {

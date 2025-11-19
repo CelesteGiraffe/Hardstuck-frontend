@@ -27,6 +27,9 @@ const {
 const app = express();
 
 const SSE_HEARTBEAT_MS = 25 * 1000;
+const MAX_HISTORY_LIMIT = 200;
+const DEFAULT_MMR_HISTORY_LIMIT = 50;
+const DEFAULT_SESSION_HISTORY_LIMIT = 25;
 const sseClients = new Set();
 const sseHeartbeats = new Map();
 
@@ -37,6 +40,34 @@ function removeSseClient(res) {
     clearInterval(heartbeat);
     sseHeartbeats.delete(res);
   }
+}
+
+function parseHistoryLimit(name, value, fallback) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    throw new Error(`${name} must be an integer`);
+  }
+
+  if (parsed <= 0) {
+    throw new Error(`${name} must be greater than 0`);
+  }
+
+  if (parsed > MAX_HISTORY_LIMIT) {
+    throw new Error(`${name} cannot exceed ${MAX_HISTORY_LIMIT}`);
+  }
+
+  return parsed;
+}
+
+function limitHistory(records, limit) {
+  if (records.length <= limit) {
+    return records;
+  }
+  return records.slice(-limit);
 }
 
 function broadcastServerUpdate(payload) {
@@ -100,6 +131,43 @@ app.get('/api/v1/bakkes/favorites', (req, res) => {
     res.json(favorites);
   } catch (error) {
     res.status(500).json({ error: 'Unable to load favorites' });
+  }
+});
+
+app.get('/api/bakkesmod/history', (req, res) => {
+  const { mmrFrom, mmrTo, sessionStart, sessionEnd, playlist } = req.query;
+
+  try {
+    const mmrLimit = parseHistoryLimit('mmrLimit', req.query.mmrLimit, DEFAULT_MMR_HISTORY_LIMIT);
+    const sessionLimit = parseHistoryLimit('sessionLimit', req.query.sessionLimit, DEFAULT_SESSION_HISTORY_LIMIT);
+    const mmrHistory = getMmrLogs({ playlist, from: mmrFrom, to: mmrTo });
+    const trainingHistory = getSessions({ start: sessionStart, end: sessionEnd });
+    const limitedMmr = limitHistory(mmrHistory, mmrLimit);
+    const limitedTraining = limitHistory(trainingHistory, sessionLimit);
+    const statusTimestamp = new Date().toISOString();
+
+    const status = {
+      receivedAt: statusTimestamp,
+      generatedAt: statusTimestamp,
+      mmrEntries: limitedMmr.length,
+      trainingSessions: limitedTraining.length,
+      lastMmrTimestamp: limitedMmr.length ? limitedMmr[limitedMmr.length - 1].timestamp : null,
+      lastTrainingTimestamp: limitedTraining.length ? limitedTraining[limitedTraining.length - 1].startedTime : null,
+      mmrLimit,
+      sessionLimit,
+      filters: {
+        playlist: playlist ?? null,
+        mmrFrom: mmrFrom ?? null,
+        mmrTo: mmrTo ?? null,
+        sessionStart: sessionStart ?? null,
+        sessionEnd: sessionEnd ?? null,
+      },
+    };
+
+    return res.json({ mmrHistory: limitedMmr, trainingHistory: limitedTraining, status });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to load history';
+    return res.status(400).json({ error: message });
   }
 });
 
