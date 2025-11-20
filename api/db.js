@@ -227,6 +227,9 @@ const insertStmt = db.prepare(
 const selectSnapshotCasualStmt = db.prepare(
   'SELECT COUNT(*) AS count FROM mmr_logs WHERE playlist = ? AND timestamp = ? AND source = ?;'
 );
+const selectLastMmrForPlaylistStmt = db.prepare(
+  'SELECT mmr FROM mmr_logs WHERE playlist = ? ORDER BY id DESC LIMIT 1;'
+);
 const selectStmt = db.prepare(
   'SELECT id, timestamp, playlist, mmr, games_played_diff AS gamesPlayedDiff, source FROM mmr_logs ORDER BY timestamp ASC;'
 );
@@ -244,6 +247,11 @@ const clearFavoritesStmt = db.prepare('DELETE FROM bakkes_favorites;');
 
 function saveMmrLog({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakkes' }) {
   const resolvedSource = source || 'bakkes';
+  // Skip storing duplicate MMR entries per playlist when nothing has changed.
+  const lastForPlaylist = selectLastMmrForPlaylistStmt.get(playlist);
+  if (lastForPlaylist && Number(lastForPlaylist.mmr) === Number(mmr)) {
+    return;
+  }
   if (resolvedSource === 'bakkes_snapshot' && playlist === 'Casual') {
     const { count } = selectSnapshotCasualStmt.get(playlist, timestamp, resolvedSource);
     if (count > 0) {
