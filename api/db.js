@@ -1,9 +1,24 @@
 const path = require('path');
+const { EventEmitter } = require('events');
 const Database = require('better-sqlite3');
 const { normalizePlaylist } = require('./playlist-normalize');
 
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'rocket_trainer.db');
 const db = new Database(dbPath);
+
+const changeEmitter = new EventEmitter();
+changeEmitter.setMaxListeners(0);
+
+function emitDatabaseChange(event) {
+  changeEmitter.emit('change', { ...event });
+}
+
+function onDatabaseChange(listener) {
+  changeEmitter.on('change', listener);
+  return () => {
+    changeEmitter.off('change', listener);
+  };
+}
 
 db.prepare(
   `CREATE TABLE IF NOT EXISTS mmr_logs (
@@ -237,10 +252,24 @@ function saveMmrLog({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakke
   }
 
   insertStmt.run(timestamp, playlist, mmr, gamesPlayedDiff, resolvedSource);
+  emitDatabaseChange({
+    type: 'mmr-log',
+    action: 'create',
+    timestamp,
+    playlist,
+    source: resolvedSource,
+  });
 }
 
 function insertRawMmrRecord({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakkes' }) {
   insertStmt.run(timestamp, playlist, mmr, gamesPlayedDiff, source);
+  emitDatabaseChange({
+    type: 'mmr-log',
+    action: 'create',
+    timestamp,
+    playlist,
+    source,
+  });
 }
 
 function getMmrLogById(id) {
@@ -284,7 +313,19 @@ function updateMmrLog({ id, timestamp, playlist, mmr, gamesPlayedDiff, source = 
     throw new Error('mmr record not found');
   }
 
-  return selectMmrByIdStmt.get(parsed);
+  const updated = selectMmrByIdStmt.get(parsed);
+  if (updated) {
+    emitDatabaseChange({
+      type: 'mmr-log',
+      action: 'update',
+      id: parsed,
+      playlist: updated.playlist,
+      source: updated.source,
+      timestamp: updated.timestamp,
+    });
+  }
+
+  return updated;
 }
 
 function getAllMmrLogs() {
@@ -332,7 +373,12 @@ function getMmrLogs({ playlist, from, to } = {}) {
 }
 
 function clearMmrLogs() {
-  clearStmt.run();
+  const info = clearStmt.run();
+  emitDatabaseChange({
+    type: 'mmr-log',
+    action: 'clear',
+    deleted: info?.changes ?? null,
+  });
 }
 
 function deleteMmrLog(id) {
@@ -345,6 +391,12 @@ function deleteMmrLog(id) {
   if (info.changes === 0) {
     throw new Error('mmr record not found');
   }
+
+  emitDatabaseChange({
+    type: 'mmr-log',
+    action: 'delete',
+    id: parsed,
+  });
 }
 
 function matchesPlaylistFilter(recordPlaylist, requestedPlaylist, normalizedRequest) {
@@ -367,6 +419,11 @@ function deleteMmrLogs({ playlist, from, to } = {}) {
 
   const conditions = [];
   const params = [];
+  const filtersPayload = {
+    playlist: playlist ?? null,
+    from: from ?? null,
+    to: to ?? null,
+  };
 
   if (from) {
     conditions.push('timestamp >= ?');
@@ -383,7 +440,16 @@ function deleteMmrLogs({ playlist, from, to } = {}) {
   if (!playlist) {
     const query = `DELETE FROM mmr_logs ${whereClause};`;
     const info = db.prepare(query).run(...params);
-    return info.changes || 0;
+    const deleted = info.changes || 0;
+    if (deleted > 0) {
+      emitDatabaseChange({
+        type: 'mmr-log',
+        action: 'bulk-delete',
+        filters: filtersPayload,
+        deleted,
+      });
+    }
+    return deleted;
   }
 
   const selectQuery = `SELECT id, playlist FROM mmr_logs ${whereClause};`;
@@ -399,7 +465,16 @@ function deleteMmrLogs({ playlist, from, to } = {}) {
   const placeholders = ids.map(() => '?').join(', ');
   const deleteStmt = db.prepare(`DELETE FROM mmr_logs WHERE id IN (${placeholders});`);
   const info = deleteStmt.run(...ids);
-  return info.changes || rowsToDelete.length;
+  const deleted = info.changes || rowsToDelete.length;
+  if (deleted > 0) {
+    emitDatabaseChange({
+      type: 'mmr-log',
+      action: 'bulk-delete',
+      filters: filtersPayload,
+      deleted,
+    });
+  }
+  return deleted;
 }
 
 function getFavoritesByUser(userId) {
@@ -424,10 +499,19 @@ function addFavoriteForUser({ userId, name, code }) {
   }
 
   insertFavoriteStmt.run(userId, name, code);
+  emitDatabaseChange({
+    type: 'favorite',
+    action: 'create',
+    userId,
+  });
 }
 
 function clearFavorites() {
   clearFavoritesStmt.run();
+  emitDatabaseChange({
+    type: 'favorite',
+    action: 'clear',
+  });
 }
 
 function getAllSkills() {
@@ -441,11 +525,23 @@ function upsertSkill({ id, name, category = null, tags = null, notes = null }) {
 
   if (id) {
     updateSkillStmt.run(name, category, tags, notes, id);
-    return selectSkillByIdStmt.get(id);
+    const updated = selectSkillByIdStmt.get(id);
+    emitDatabaseChange({
+      type: 'skill',
+      action: 'update',
+      skillId: id,
+    });
+    return updated;
   }
 
   const info = insertSkillStmt.run(name, category, tags, notes);
-  return selectSkillByIdStmt.get(info.lastInsertRowid);
+  const created = selectSkillByIdStmt.get(info.lastInsertRowid);
+  emitDatabaseChange({
+    type: 'skill',
+    action: 'create',
+    skillId: info.lastInsertRowid,
+  });
+  return created;
 }
 
 function getSkillReferenceCount(skillId) {
@@ -466,10 +562,19 @@ function deleteSkill(id) {
   }
 
   deleteSkillStmt.run(id);
+  emitDatabaseChange({
+    type: 'skill',
+    action: 'delete',
+    skillId: id,
+  });
 }
 
 function clearSkills() {
   clearSkillsStmt.run();
+  emitDatabaseChange({
+    type: 'skill',
+    action: 'clear',
+  });
 }
 
 function buildPresetResponse(preset) {
@@ -513,7 +618,14 @@ function savePreset(preset) {
     throw new Error('name is required');
   }
 
-  return savePresetTransaction(preset);
+  const action = preset.id ? 'update' : 'create';
+  const saved = savePresetTransaction(preset);
+  emitDatabaseChange({
+    type: 'preset',
+    action,
+    presetId: saved.id,
+  });
+  return saved;
 }
 
 function deletePreset(id) {
@@ -527,11 +639,20 @@ function deletePreset(id) {
   });
 
   remove(id);
+  emitDatabaseChange({
+    type: 'preset',
+    action: 'delete',
+    presetId: id,
+  });
 }
 
 function clearPresetTables() {
   clearPresetBlocksStmt.run();
   clearPresetsStmt.run();
+  emitDatabaseChange({
+    type: 'preset',
+    action: 'clear',
+  });
 }
 
 function buildSessionResponse(session) {
@@ -668,12 +789,23 @@ function saveSession(session) {
     throw new Error('startedTime and source are required');
   }
 
-  return saveSessionTransaction(session);
+  const saved = saveSessionTransaction(session);
+  emitDatabaseChange({
+    type: 'session',
+    action: 'create',
+    sessionId: saved.id,
+    source: session.source,
+  });
+  return saved;
 }
 
 function clearSessionTables() {
   clearSessionBlocksStmt.run();
   clearSessionsStmt.run();
+  emitDatabaseChange({
+    type: 'session',
+    action: 'clear',
+  });
 }
 
 function ensureProfileSettingsRow() {
@@ -691,7 +823,12 @@ function getProfile() {
 function updateProfile({ name, avatarUrl = '', timezone, defaultWeeklyTargetMinutes }) {
   ensureProfileSettingsRow();
   updateProfileStmt.run(name, avatarUrl, timezone, defaultWeeklyTargetMinutes);
-  return selectProfileStmt.get();
+  const updated = selectProfileStmt.get();
+  emitDatabaseChange({
+    type: 'profile',
+    action: 'update',
+  });
+  return updated;
 }
 
 function normalizeGoalNumber(value) {
@@ -753,7 +890,13 @@ function saveTrainingGoal({
       notesValue,
       id
     );
-    return selectTrainingGoalByIdStmt.get(id);
+    const updated = selectTrainingGoalByIdStmt.get(id);
+    emitDatabaseChange({
+      type: 'training-goal',
+      action: 'update',
+      goalId: id,
+    });
+    return updated;
   }
 
   const info = insertTrainingGoalStmt.run(
@@ -765,7 +908,13 @@ function saveTrainingGoal({
     normalizedPeriodDays,
     notesValue
   );
-  return selectTrainingGoalByIdStmt.get(info.lastInsertRowid);
+  const created = selectTrainingGoalByIdStmt.get(info.lastInsertRowid);
+  emitDatabaseChange({
+    type: 'training-goal',
+    action: 'create',
+    goalId: info.lastInsertRowid,
+  });
+  return created;
 }
 
 function deleteTrainingGoal(id) {
@@ -774,6 +923,11 @@ function deleteTrainingGoal(id) {
   }
 
   deleteTrainingGoalStmt.run(id);
+  emitDatabaseChange({
+    type: 'training-goal',
+    action: 'delete',
+    goalId: Number(id),
+  });
 }
 
 function buildTimeFilters({ from, to } = {}) {
@@ -851,10 +1005,18 @@ function getGoalProgress({ goalId, from, to } = {}) {
 function clearProfileSettings() {
   clearProfileSettingsStmt.run();
   ensureProfileSettingsRow();
+  emitDatabaseChange({
+    type: 'profile',
+    action: 'clear',
+  });
 }
 
 function clearTrainingGoals() {
   clearTrainingGoalsStmt.run();
+  emitDatabaseChange({
+    type: 'training-goal',
+    action: 'clear',
+  });
 }
 
 ensureProfileSettingsRow();
@@ -892,4 +1054,5 @@ module.exports = {
   getGoalProgress,
   clearProfileSettings,
   clearTrainingGoals,
+  onChange: onDatabaseChange,
 };

@@ -22,6 +22,7 @@ const {
   saveTrainingGoal,
   deleteTrainingGoal,
   getGoalProgress,
+  onChange,
 } = db;
 
 const app = express();
@@ -84,6 +85,10 @@ function broadcastServerUpdate(payload) {
       removeSseClient(client);
     }
   }
+}
+
+if (typeof onChange === 'function') {
+  onChange(broadcastServerUpdate);
 }
 
 app.use(express.json());
@@ -208,14 +213,6 @@ app.post('/api/mmr-log', (req, res) => {
     source,
   });
 
-  broadcastServerUpdate({
-    type: 'mmr-log',
-    action: 'create',
-    playlist: normalizedPlaylist,
-    source: source ?? null,
-    timestamp,
-  });
-
   res.status(201).json({ saved: true });
 });
 
@@ -233,12 +230,6 @@ app.delete('/api/mmr/:id', (req, res) => {
 
   try {
     deleteMmrLog(id);
-
-    broadcastServerUpdate({
-      type: 'mmr-log',
-      action: 'delete',
-      id,
-    });
     res.status(204).end();
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to delete mmr record';
@@ -293,14 +284,6 @@ app.patch('/api/mmr/:id', (req, res) => {
       gamesPlayedDiff: gamesPlayedDiffNum,
       source,
     });
-
-    broadcastServerUpdate({
-      type: 'mmr-log',
-      action: 'update',
-      id: updated.id,
-      playlist: normalizedPlaylist,
-      source: source ?? null,
-    });
     res.json(updated);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update mmr record';
@@ -321,13 +304,6 @@ app.delete('/api/mmr', (req, res) => {
 
   try {
     const deleted = deleteMmrLogs({ playlist, from, to });
-
-    broadcastServerUpdate({
-      type: 'mmr-log',
-      action: 'bulk-delete',
-      filters: { playlist, from, to },
-      deleted,
-    });
     res.status(200).json({ deleted });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to delete mmr records';
@@ -579,12 +555,6 @@ app.post('/api/sessions', (req, res) => {
 
   try {
     const saved = saveSession({ startedTime, finishedTime, source, presetId, notes, blocks: normalizedBlocks });
-    broadcastServerUpdate({
-      type: 'session',
-      action: 'create',
-      sessionId: saved.id,
-      source,
-    });
     res.status(201).json(saved);
   } catch (error) {
     res.status(400).json({ error: error.message });

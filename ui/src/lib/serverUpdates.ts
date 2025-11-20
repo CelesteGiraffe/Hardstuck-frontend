@@ -1,4 +1,5 @@
-import { mmrLogQuery, sessionsQuery, weeklySkillSummaryQuery } from './queries';
+import { mmrLogQuery, sessionsQuery, weeklySkillSummaryQuery, skillsQuery, presetsQuery } from './queries';
+import { profileStore } from './profileStore';
 
 type UpdateListener = (event: ServerUpdateEvent) => void;
 
@@ -15,6 +16,15 @@ function emitUpdate(event: ServerUpdateEvent) {
   for (const listener of Array.from(listeners)) {
     listener(event);
   }
+}
+
+function refreshAllData() {
+  void mmrLogQuery.refresh(undefined, { force: true });
+  void sessionsQuery.refresh(undefined, { force: true });
+  void weeklySkillSummaryQuery.refresh(undefined, { force: true });
+  void skillsQuery.refresh(undefined, { force: true });
+  void presetsQuery.refresh(undefined, { force: true });
+  void profileStore.refresh({ force: true });
 }
 
 export function onServerUpdate(listener: UpdateListener) {
@@ -47,6 +57,11 @@ function parseUpdateMessage(rawData: string): ServerUpdateEvent {
   };
 }
 
+export function handleServerUpdate(update: ServerUpdateEvent) {
+  emitUpdate(update);
+  refreshAllData();
+}
+
 if (typeof window !== 'undefined' && 'EventSource' in window) {
   const apiBase = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
   const updatesUrl = `${apiBase}${EVENTS_PATH}`;
@@ -54,15 +69,7 @@ if (typeof window !== 'undefined' && 'EventSource' in window) {
 
   eventSource.addEventListener('update', (event: MessageEvent) => {
     const update = parseUpdateMessage(event.data);
-    emitUpdate(update);
-    if (update.type.startsWith('mmr-')) {
-      void mmrLogQuery.refresh(undefined, { force: true });
-    }
-
-    if (update.type === 'session') {
-      void sessionsQuery.refresh(undefined, { force: true });
-      void weeklySkillSummaryQuery.refresh(undefined, { force: true });
-    }
+    handleServerUpdate(update);
   });
 
   eventSource.addEventListener('error', () => {
