@@ -250,12 +250,12 @@ function saveMmrLog({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakke
   // Skip storing duplicate MMR entries per playlist when nothing has changed.
   const lastForPlaylist = selectLastMmrForPlaylistStmt.get(playlist);
   if (lastForPlaylist && Number(lastForPlaylist.mmr) === Number(mmr)) {
-    return;
+    return false;
   }
   if (resolvedSource === 'bakkes_snapshot' && playlist === 'Casual') {
     const { count } = selectSnapshotCasualStmt.get(playlist, timestamp, resolvedSource);
     if (count > 0) {
-      return;
+      return false;
     }
   }
 
@@ -267,6 +267,7 @@ function saveMmrLog({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakke
     playlist,
     source: resolvedSource,
   });
+  return true;
 }
 
 function insertRawMmrRecord({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakkes' }) {

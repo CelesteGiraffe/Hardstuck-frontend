@@ -5,6 +5,8 @@
     deleteMmrRecord,
     deleteMmrRecords,
     deleteAllMmrRecords,
+    exportHistoryCsv,
+    importHistoryCsv,
     updateMmrRecord,
   } from './api';
   import type { Session, SessionBlock, SkillSummary, MmrRecord } from './api';
@@ -128,6 +130,12 @@
   let exportMessage: string | null = null;
   let exportError: string | null = null;
   let exportLoading = false;
+  let importCsvText = '';
+  let importStatusMessage: string | null = null;
+  let importErrors: string[] = [];
+  let importingCsv = false;
+  let importFileName = '';
+  let isImportDialogOpen = false;
   let deleteFilterLoading = false;
   let deleteAllLoading = false;
   let deletingIds: number[] = [];
@@ -478,6 +486,76 @@
     }
   }
 
+  async function downloadHistoryCsvFile() {
+    exportMessage = null;
+    exportError = null;
+    exportLoading = true;
+    try {
+      const { from, to } = buildRangeIso();
+      const csv = await exportHistoryCsv({ from, to });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `rocket-league-history-${new Date().toISOString()}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      exportMessage = 'History CSV downloaded';
+    } catch (err) {
+      exportError = err instanceof Error ? err.message : 'Unable to download CSV';
+    } finally {
+      exportLoading = false;
+    }
+  }
+
+  async function handleImportFile(event: Event) {
+    const files = (event.currentTarget as HTMLInputElement).files;
+    if (!files?.length) {
+      importFileName = '';
+      return;
+    }
+
+    importFileName = files[0].name;
+    importCsvText = await files[0].text();
+  }
+
+  async function submitImportCsv() {
+    if (!importCsvText.trim()) {
+      importStatusMessage = 'Paste or drop CSV data before importing';
+      return;
+    }
+
+    importingCsv = true;
+    importStatusMessage = null;
+    importErrors = [];
+    try {
+      const result = await importHistoryCsv(importCsvText);
+      const messages = [`Imported ${result.imported} rows`];
+      if (result.skipped) {
+        messages.push(`skipped ${result.skipped}`);
+      }
+      importStatusMessage = messages.join(', ');
+      importErrors = result.errors ?? [];
+      await refreshHistoryData();
+    } catch (err) {
+      importErrors = [err instanceof Error ? err.message : 'Unable to import CSV'];
+    } finally {
+      importingCsv = false;
+    }
+  }
+
+  function openImportDialog() {
+    importStatusMessage = null;
+    importErrors = [];
+    isImportDialogOpen = true;
+  }
+
+  function closeImportDialog() {
+    isImportDialogOpen = false;
+  }
+
   function isDeleting(id: number) {
     return deletingIds.includes(id);
   }
@@ -809,6 +887,12 @@
       <button type="button" class="btn-tertiary" on:click={copyHistoryCsv} disabled={exportLoading}>
         Copy history CSV
       </button>
+      <button type="button" class="btn-tertiary" on:click={downloadHistoryCsvFile} disabled={exportLoading}>
+        Download history CSV
+      </button>
+      <button type="button" class="btn-tertiary" on:click={openImportDialog} disabled={importingCsv}>
+        {importingCsv ? 'Importing…' : 'Import history CSV'}
+      </button>
       <button type="button" class="btn-tertiary" on:click={downloadHistoryScreenshot} disabled={exportLoading}>
         Download screenshot
       </button>
@@ -825,6 +909,53 @@
         <p class="export-feedback offline">{exportError}</p>
       {/if}
     </div>
+
+    {#if isImportDialogOpen}
+      <div class="import-dialog-backdrop" role="dialog" aria-modal="true">
+        <div class="import-dialog">
+          <header>
+            <h3>Import history CSV</h3>
+            <button type="button" class="close" on:click={closeImportDialog} aria-label="Close import dialog">
+              ×
+            </button>
+          </header>
+          <p>Paste rows from the exported CSV or upload a file to seed MMR entries. The API reports how many were imported.</p>
+          <label class="import-file-label">
+            Choose CSV file
+            <input type="file" accept=".csv,text/csv" on:change={handleImportFile} />
+          </label>
+          {#if importFileName}
+            <p class="file-meta">Loaded: {importFileName}</p>
+          {/if}
+          <textarea
+            rows="5"
+            placeholder="MMR Playlist,Timestamp,MMR,Games Played Diff,Source"
+            bind:value={importCsvText}
+          ></textarea>
+          <div class="dialog-actions">
+            <button type="button" class="btn-primary" on:click={submitImportCsv} disabled={!importCsvText.trim() || importingCsv}>
+              {importingCsv ? 'Importing…' : 'Import CSV'}
+            </button>
+            <button type="button" class="btn-tertiary" on:click={closeImportDialog} disabled={importingCsv}>
+              Close
+            </button>
+          </div>
+          {#if importStatusMessage}
+            <p class="import-feedback success">{importStatusMessage}</p>
+          {/if}
+          {#if importErrors.length}
+            <div class="import-feedback offline">
+              <p>Issues found:</p>
+              <ul>
+                {#each importErrors as error}
+                  <li>{error}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
 
     {#if comparisonSeries.length}
       <div class="playlist-comparison">
@@ -1152,6 +1283,89 @@
     gap: 0.5rem;
     margin-bottom: 1rem;
     font-size: 0.85rem;
+  }
+
+  .import-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 40;
+  }
+
+  .import-dialog {
+    background: var(--card-background, rgba(15, 23, 42, 0.95));
+    border-radius: 16px;
+    padding: 1.25rem;
+    width: min(420px, 100%);
+    box-shadow: var(--history-card-shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .import-dialog header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .import-dialog textarea {
+    width: 100%;
+    min-height: 120px;
+    resize: vertical;
+    border-radius: 8px;
+    padding: 0.75rem;
+    background: var(--input-background, rgba(15, 23, 42, 0.9));
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
+    color: #fff;
+    font-family: inherit;
+  }
+
+  .import-dialog .file-meta {
+    margin: 0;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .import-file-label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.85rem;
+    gap: 0.25rem;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .import-file-label input[type='file'] {
+    cursor: pointer;
+    color: #fff;
+  }
+
+  .dialog-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .import-dialog button.close {
+    border: none;
+    background: transparent;
+    color: #fff;
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+
+  .import-dialog .import-feedback ul {
+    margin: 0.25rem 0 0;
+    padding-left: 1rem;
+  }
+
+  .import-feedback {
+    margin: 0;
+    font-size: 0.75rem;
   }
 
   .btn-tertiary {

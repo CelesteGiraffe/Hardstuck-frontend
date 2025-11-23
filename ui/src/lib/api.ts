@@ -211,6 +211,49 @@ export async function getBakkesmodHistory(filters: BakkesmodHistoryFilters = {})
   return (await response.json()) as BakkesmodHistoryPayload;
 }
 
+export type HistoryExportFilters = {
+  playlist?: string;
+  from?: string;
+  to?: string;
+};
+
+export async function exportHistoryCsv(filters: HistoryExportFilters = {}): Promise<string> {
+  const params = new URLSearchParams();
+  if (filters.playlist) params.set('playlist', filters.playlist);
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+  const path = `/api/history/export${params.toString() ? `?${params}` : ''}`;
+  const response = await fetch(buildUrl(path));
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to export history CSV');
+  }
+
+  return await response.text();
+}
+
+export type HistoryImportResult = {
+  imported: number;
+  skipped: number;
+  errors: string[];
+};
+
+export async function importHistoryCsv(csv: string): Promise<HistoryImportResult> {
+  const response = await fetch(buildUrl('/api/history/import'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ csv }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to import history CSV');
+  }
+
+  return (await response.json()) as HistoryImportResult;
+}
+
 export async function createMmrLog(payload: MmrLogPayload): Promise<void> {
   const response = await fetch(buildUrl('/api/mmr-log'), {
     method: 'POST',
