@@ -1,6 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { createMmrLog, deleteMmrRecord, deleteMmrRecords, updateMmrRecord } from './api';
+  import {
+    createMmrLog,
+    deleteMmrRecord,
+    deleteMmrRecords,
+    deleteAllMmrRecords,
+    updateMmrRecord,
+  } from './api';
   import type { Session, SessionBlock, SkillSummary, MmrRecord } from './api';
   import { useSkills } from './useSkills';
   import html2canvas from 'html2canvas';
@@ -123,6 +129,7 @@
   let exportError: string | null = null;
   let exportLoading = false;
   let deleteFilterLoading = false;
+  let deleteAllLoading = false;
   let deletingIds: number[] = [];
   
   let editingMmrId: number | null = null;
@@ -520,6 +527,31 @@
     }
   }
 
+  async function handleDeleteAll() {
+    if (!window.confirm('Delete all MMR records? This cannot be undone.')) {
+      return;
+    }
+
+    deleteAllLoading = true;
+    exportMessage = null;
+    exportError = null;
+    try {
+      const result = await deleteAllMmrRecords();
+      if (result && typeof result.deleted === 'number') {
+        exportMessage = `Deleted ${result.deleted} records`;
+      } else {
+        exportMessage = 'Deleted all records';
+      }
+
+      const filters = buildMmrFilters();
+      await mmrLogQuery.refresh({ from: filters.from, to: filters.to });
+    } catch (err) {
+      exportError = err instanceof Error ? err.message : 'Unable to delete records';
+    } finally {
+      deleteAllLoading = false;
+    }
+  }
+
   function buildChartMetrics(
     records: MmrRecord[],
     viewWidth: number,
@@ -782,6 +814,9 @@
       </button>
       <button type="button" class="btn-danger" on:click={handleDeleteFiltered} disabled={deleteFilterLoading}>
         {deleteFilterLoading ? 'Deleting…' : 'Delete selected data'}
+      </button>
+      <button type="button" class="btn-danger" on:click={handleDeleteAll} disabled={deleteAllLoading}>
+        {deleteAllLoading ? 'Deleting…' : 'Delete all history'}
       </button>
       {#if exportMessage}
         <p class="export-feedback success">{exportMessage}</p>

@@ -382,11 +382,13 @@ function getMmrLogs({ playlist, from, to } = {}) {
 
 function clearMmrLogs() {
   const info = clearStmt.run();
+  const deleted = info?.changes ?? 0;
   emitDatabaseChange({
     type: 'mmr-log',
     action: 'clear',
-    deleted: info?.changes ?? null,
+    deleted,
   });
+  return deleted;
 }
 
 function deleteMmrLog(id) {

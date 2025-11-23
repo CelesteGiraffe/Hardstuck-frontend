@@ -7,6 +7,7 @@ const {
   deleteMmrLog,
   updateMmrLog,
   deleteMmrLogs,
+  clearMmrLogs,
   getAllSkills,
   upsertSkill,
   deleteSkill,
@@ -221,6 +222,16 @@ app.get('/api/mmr', (req, res) => {
   res.json(getMmrLogs({ playlist, from, to }));
 });
 
+app.delete('/api/mmr/clear', (_, res) => {
+  try {
+    const deleted = clearMmrLogs();
+    res.status(200).json({ deleted });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to clear mmr records';
+    res.status(500).json({ error: message });
+  }
+});
+
 app.delete('/api/mmr/:id', (req, res) => {
   const id = Number(req.params.id);
 
@@ -295,7 +306,10 @@ app.patch('/api/mmr/:id', (req, res) => {
   }
 });
 
-app.delete('/api/mmr', (req, res) => {
+app.delete('/api/mmr', (req, res, next) => {
+  if (req.path !== '/api/mmr') {
+    return next();
+  }
   const { playlist, from, to } = req.query;
 
   if (!playlist && !from && !to) {

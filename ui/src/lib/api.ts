@@ -269,6 +269,17 @@ export async function deleteMmrRecords(filters: { playlist?: string; from?: stri
   return data ?? undefined;
 }
 
+export async function deleteAllMmrRecords(): Promise<{ deleted: number }> {
+  const response = await fetch(buildUrl('/api/mmr/clear'), { method: 'DELETE' });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to delete all MMR records');
+  }
+
+  return (await response.json()) as { deleted: number };
+}
+
 export async function getSkills(): Promise<Skill[]> {
   const response = await fetch(buildUrl('/api/skills'));
   if (!response.ok) {
