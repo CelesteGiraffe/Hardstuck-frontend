@@ -1,6 +1,7 @@
 const path = require('path');
 const { EventEmitter } = require('events');
 const Database = require('better-sqlite3');
+const zlib = require('zlib');
 const { normalizePlaylist } = require('./playlist-normalize');
 
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'rocket_trainer.db');
@@ -8,6 +9,9 @@ const db = new Database(dbPath);
 
 const changeEmitter = new EventEmitter();
 changeEmitter.setMaxListeners(0);
+
+const PRESET_SHARE_PREFIX = 'RLTRAINER:PRESET:V1:';
+const PRESET_SHARE_VERSION = 1;
 
 function emitDatabaseChange(event) {
   changeEmitter.emit('change', { ...event });
@@ -136,6 +140,8 @@ function ensureColumn(tableName, columnDefinition) {
 
 ensureColumn('sessions', 'actual_duration INTEGER DEFAULT 0');
 ensureColumn('sessions', 'skill_ids TEXT');
+ensureColumn('skills', 'favorite_code TEXT');
+ensureColumn('skills', 'favorite_name TEXT');
 
 const selectPresetsStmt = db.prepare('SELECT id, name FROM presets ORDER BY id ASC;');
 const selectPresetByIdStmt = db.prepare('SELECT id, name FROM presets WHERE id = ?;');
@@ -190,17 +196,18 @@ const deleteTrainingGoalStmt = db.prepare('DELETE FROM training_goals WHERE id =
 const clearTrainingGoalsStmt = db.prepare('DELETE FROM training_goals;');
 
 const selectSkillsStmt = db.prepare(
-  'SELECT id, name, category, tags, notes FROM skills ORDER BY id ASC;'
+  'SELECT id, name, category, tags, notes, favorite_code AS favoriteCode, favorite_name AS favoriteName FROM skills ORDER BY id ASC;'
 );
 const selectSkillByIdStmt = db.prepare(
-  'SELECT id, name, category, tags, notes FROM skills WHERE id = ?;'
+  'SELECT id, name, category, tags, notes, favorite_code AS favoriteCode, favorite_name AS favoriteName FROM skills WHERE id = ?;'
 );
 const insertSkillStmt = db.prepare(
-  'INSERT INTO skills (name, category, tags, notes) VALUES (?, ?, ?, ?);'
+  'INSERT INTO skills (name, category, tags, notes, favorite_code, favorite_name) VALUES (?, ?, ?, ?, ?, ?);'
 );
 const updateSkillStmt = db.prepare(
-  'UPDATE skills SET name = ?, category = ?, tags = ?, notes = ? WHERE id = ?;'
+  'UPDATE skills SET name = ?, category = ?, tags = ?, notes = ?, favorite_code = ?, favorite_name = ? WHERE id = ?;'
 );
+const selectSkillByNameStmt = db.prepare('SELECT id FROM skills WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1;');
 const selectPresetUsageStmt = db.prepare('SELECT COUNT(*) AS count FROM preset_blocks WHERE skill_id = ?;');
 const selectSessionBlocksUsageStmt = db.prepare(
   `SELECT COUNT(*) AS count
@@ -242,6 +249,9 @@ const updateMmrStmt = db.prepare(
 const deleteMmrStmt = db.prepare('DELETE FROM mmr_logs WHERE id = ?;');
 const clearStmt = db.prepare('DELETE FROM mmr_logs;');
 const selectFavoritesByUserStmt = db.prepare('SELECT name, code FROM bakkes_favorites WHERE user_id = ? ORDER BY id ASC;');
+const selectFavoriteByUserAndCodeStmt = db.prepare(
+  'SELECT id FROM bakkes_favorites WHERE user_id = ? AND code = ? LIMIT 1;'
+);
 const insertFavoriteStmt = db.prepare('INSERT INTO bakkes_favorites (user_id, name, code) VALUES (?, ?, ?);');
 const clearFavoritesStmt = db.prepare('DELETE FROM bakkes_favorites;');
 
@@ -517,6 +527,25 @@ function addFavoriteForUser({ userId, name, code }) {
   });
 }
 
+function ensureFavoriteForUser({ userId, name, code }) {
+  if (!userId || !name || !code) {
+    return;
+  }
+
+  const trimmedName = name.trim();
+  const trimmedCode = code.trim();
+  if (!trimmedName || !trimmedCode) {
+    return;
+  }
+
+  const existing = selectFavoriteByUserAndCodeStmt.get(userId, trimmedCode);
+  if (existing) {
+    return;
+  }
+
+  addFavoriteForUser({ userId, name: trimmedName, code: trimmedCode });
+}
+
 function clearFavorites() {
   clearFavoritesStmt.run();
   emitDatabaseChange({
@@ -529,13 +558,21 @@ function getAllSkills() {
   return selectSkillsStmt.all();
 }
 
-function upsertSkill({ id, name, category = null, tags = null, notes = null }) {
+function upsertSkill({
+  id,
+  name,
+  category = null,
+  tags = null,
+  notes = null,
+  favoriteCode = null,
+  favoriteName = null,
+}) {
   if (!name) {
     throw new Error('name is required');
   }
 
   if (id) {
-    updateSkillStmt.run(name, category, tags, notes, id);
+    updateSkillStmt.run(name, category, tags, notes, favoriteCode ?? null, favoriteName ?? null, id);
     const updated = selectSkillByIdStmt.get(id);
     emitDatabaseChange({
       type: 'skill',
@@ -545,7 +582,7 @@ function upsertSkill({ id, name, category = null, tags = null, notes = null }) {
     return updated;
   }
 
-  const info = insertSkillStmt.run(name, category, tags, notes);
+  const info = insertSkillStmt.run(name, category, tags, notes, favoriteCode ?? null, favoriteName ?? null);
   const created = selectSkillByIdStmt.get(info.lastInsertRowid);
   emitDatabaseChange({
     type: 'skill',
@@ -1030,6 +1067,195 @@ function clearTrainingGoals() {
   });
 }
 
+function encodePresetShare(payload) {
+  const json = JSON.stringify(payload);
+  const compressed = zlib.deflateSync(json);
+  return `${PRESET_SHARE_PREFIX}${compressed.toString('base64')}`;
+}
+
+function decodePresetShare(text) {
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new Error('share text is required');
+  }
+
+  if (!text.startsWith(PRESET_SHARE_PREFIX)) {
+    throw new Error('invalid share payload');
+  }
+
+  const encoded = text.slice(PRESET_SHARE_PREFIX.length);
+  let buffer;
+  try {
+    buffer = Buffer.from(encoded, 'base64');
+  } catch (error) {
+    throw new Error('invalid share payload');
+  }
+
+  let json;
+  try {
+    json = zlib.inflateSync(buffer).toString('utf8');
+  } catch (error) {
+    throw new Error('unable to decode share payload');
+  }
+
+  return JSON.parse(json);
+}
+
+function buildPresetSharePayload(presetId) {
+  const preset = selectPresetByIdStmt.get(presetId);
+  if (!preset) {
+    throw new Error('preset not found');
+  }
+
+  const blocks = selectBlocksStmt.all(presetId);
+  const skillIndexMap = new Map();
+  const skills = [];
+
+  for (const block of blocks) {
+    if (!skillIndexMap.has(block.skillId)) {
+      const skill = selectSkillByIdStmt.get(block.skillId);
+      if (!skill) {
+        throw new Error('skill not found');
+      }
+      skillIndexMap.set(block.skillId, skills.length);
+      skills.push({
+        name: skill.name,
+        category: skill.category ?? null,
+        tags: skill.tags ?? null,
+        notes: skill.notes ?? null,
+        favoriteCode: skill.favoriteCode ?? null,
+        favoriteName: skill.favoriteName ?? null,
+      });
+    }
+  }
+
+  const payloadBlocks = blocks.map((block) => ({
+    skillIndex: skillIndexMap.get(block.skillId),
+    orderIndex: block.orderIndex,
+    type: block.type,
+    durationSeconds: block.durationSeconds,
+    notes: block.notes ?? null,
+  }));
+
+  return {
+    version: PRESET_SHARE_VERSION,
+    preset: {
+      name: preset.name,
+      blocks: payloadBlocks,
+    },
+    skills,
+  };
+}
+
+function sanitizeString(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+}
+
+function resolveSkillIdForSharedDefinition(definition, userId) {
+  const name = sanitizeString(definition?.name);
+  if (!name) {
+    throw new Error('skill name is required');
+  }
+
+  const existing = selectSkillByNameStmt.get(name);
+  if (existing) {
+    return existing.id;
+  }
+
+  const created = upsertSkill({
+    name,
+    category: sanitizeString(definition.category),
+    tags: sanitizeString(definition.tags),
+    notes: sanitizeString(definition.notes),
+    favoriteCode: sanitizeString(definition.favoriteCode),
+    favoriteName: sanitizeString(definition.favoriteName),
+  });
+
+  ensureFavoriteForUser({
+    userId,
+    name: sanitizeString(definition.favoriteName),
+    code: sanitizeString(definition.favoriteCode),
+  });
+
+  return created.id;
+}
+
+function importPresetShare({ share, userId }) {
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('userId is required');
+  }
+  const payload = decodePresetShare(share);
+  if (payload.version !== PRESET_SHARE_VERSION) {
+    throw new Error('unsupported share version');
+  }
+
+  const presetName = sanitizeString(payload.preset?.name);
+  if (!presetName) {
+    throw new Error('preset name is required');
+  }
+
+  const blocks = Array.isArray(payload.preset?.blocks) ? payload.preset.blocks : [];
+  if (!blocks.length) {
+    throw new Error('preset must include at least one block');
+  }
+
+  const skills = Array.isArray(payload.skills) ? payload.skills : [];
+  if (!skills.length) {
+    throw new Error('shared preset must include skill definitions');
+  }
+
+  const normalizedBlocks = blocks.map((block, index) => {
+    const skillIndex = block.skillIndex;
+    if (!Number.isInteger(skillIndex)) {
+      throw new Error('invalid skill reference');
+    }
+
+    if (skillIndex < 0 || skillIndex >= skills.length) {
+      throw new Error('skill reference out of range');
+    }
+
+    const duration = Number(block.durationSeconds ?? 0);
+    const notes = sanitizeString(block.notes);
+    const type = typeof block.type === 'string' && block.type.trim() ? block.type.trim() : 'Block';
+
+    return {
+      skillIndex,
+      orderIndex: Number.isInteger(block.orderIndex) ? block.orderIndex : index,
+      type,
+      durationSeconds: Number.isFinite(duration) ? duration : 0,
+      notes,
+    };
+  });
+
+  const skillIndexToId = new Map();
+  const presetBlocks = normalizedBlocks.map((block) => {
+    let skillId = skillIndexToId.get(block.skillIndex);
+    if (!skillId) {
+      skillId = resolveSkillIdForSharedDefinition(skills[block.skillIndex], userId);
+      skillIndexToId.set(block.skillIndex, skillId);
+    }
+
+    return {
+      orderIndex: block.orderIndex,
+      skillId,
+      type: block.type,
+      durationSeconds: block.durationSeconds,
+      notes: block.notes,
+    };
+  });
+
+  return savePreset({ name: presetName, blocks: presetBlocks });
+}
+
+function exportPresetShare(presetId) {
+  const payload = buildPresetSharePayload(presetId);
+  return encodePresetShare(payload);
+}
+
 ensureProfileSettingsRow();
 
 module.exports = {
@@ -1044,6 +1270,7 @@ module.exports = {
   insertRawMmrRecord,
   getFavoritesByUser,
   addFavoriteForUser,
+  ensureFavoriteForUser,
   clearFavorites,
   getAllSkills,
   upsertSkill,
@@ -1051,6 +1278,8 @@ module.exports = {
   clearSkills,
   getAllPresets,
   savePreset,
+  exportPresetShare,
+  importPresetShare,
   deletePreset,
   clearPresetTables,
   getSessions,

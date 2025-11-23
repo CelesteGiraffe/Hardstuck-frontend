@@ -11,8 +11,11 @@ const {
   getAllSkills,
   upsertSkill,
   deleteSkill,
+  ensureFavoriteForUser,
   getAllPresets,
   savePreset,
+  exportPresetShare,
+  importPresetShare,
   deletePreset,
   getSessions,
   saveSession,
@@ -494,13 +497,15 @@ app.get('/api/skills', (_, res) => {
 });
 
 app.post('/api/skills', (req, res) => {
-  const { id, name, category, tags, notes } = req.body;
+  const { id, name, category, tags, notes, favoriteCode, favoriteName } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: 'name is required' });
   }
 
-  const skill = upsertSkill({ id, name, category, tags, notes });
+  const skill = upsertSkill({ id, name, category, tags, notes, favoriteCode, favoriteName });
+  const userId = (req.header('x-user-id') || '').trim();
+  ensureFavoriteForUser({ userId, name: favoriteName, code: favoriteCode });
   res.status(201).json(skill);
 });
 
@@ -564,6 +569,42 @@ app.delete('/api/presets/:id', (req, res) => {
     res.status(204).end();
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/presets/:id/share', (req, res) => {
+  const presetId = Number(req.params.id);
+
+  if (!Number.isInteger(presetId) || presetId <= 0) {
+    return res.status(400).json({ error: 'invalid preset id' });
+  }
+
+  try {
+    const share = exportPresetShare(presetId);
+    res.json({ share });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to generate share text';
+    res.status(400).json({ error: message });
+  }
+});
+
+app.post('/api/presets/share/import', (req, res) => {
+  const shareText = typeof req.body?.share === 'string' ? req.body.share.trim() : '';
+  if (!shareText) {
+    return res.status(400).json({ error: 'share text is required' });
+  }
+
+  const userId = (req.header('x-user-id') || '').trim();
+  if (!userId) {
+    return res.status(401).json({ error: 'X-User-Id header is required' });
+  }
+
+  try {
+    const preset = importPresetShare({ share: shareText, userId });
+    res.status(201).json({ preset });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to import shared preset';
+    res.status(400).json({ error: message });
   }
 });
 

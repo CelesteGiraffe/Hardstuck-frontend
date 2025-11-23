@@ -1,3 +1,4 @@
+import { getBakkesUserId } from './constants';
 export type MmrRecord = {
   id: number;
   timestamp: string;
@@ -339,6 +340,44 @@ export async function getPresets(): Promise<Preset[]> {
   }
 
   return (await response.json()) as Preset[];
+}
+
+export async function getPresetShare(presetId: number): Promise<string> {
+  const response = await fetch(buildUrl(`/api/presets/${presetId}/share`));
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to generate share text');
+  }
+
+  const payload = (await response.json()) as { share: string };
+  if (!payload?.share) {
+    throw new Error('Invalid share data');
+  }
+
+  return payload.share;
+}
+
+export async function importPresetShare(share: string, userId: string): Promise<Preset> {
+  const response = await fetch(buildUrl('/api/presets/share/import'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-User-Id': userId,
+    },
+    body: JSON.stringify({ share }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to import shared preset');
+  }
+
+  const payload = (await response.json()) as { preset: Preset };
+  if (!payload?.preset) {
+    throw new Error('Invalid response from share import');
+  }
+
+  return payload.preset;
 }
 
 export async function savePreset(payload: PresetPayload): Promise<Preset> {
