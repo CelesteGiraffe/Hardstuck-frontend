@@ -64,11 +64,28 @@
   let rankLabel = 'Rank pending';
   let rankImageSrc = '/ranks/norank.png';
 
+  const AUDIO_STORAGE_KEY = 'timer-audio-cues';
+  let audioEnabled = true;
+
   onMount(() => {
     loadRankThresholds().then((table) => {
       rankThresholds = table;
     });
+    loadAudioPreference();
   });
+
+  function loadAudioPreference() {
+    if (typeof localStorage === 'undefined') return;
+    const stored = localStorage.getItem(AUDIO_STORAGE_KEY);
+    audioEnabled = stored === null ? true : stored === 'true';
+  }
+
+  function setAudioPreference(value: boolean) {
+    audioEnabled = value;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(AUDIO_STORAGE_KEY, String(value));
+    }
+  }
 
   $: profileDisplayName = $profileSettingsStore.name?.trim() || 'Trainer';
   $: profileAvatarUrl = $profileSettingsStore.avatarUrl?.trim() || '/default.png';
@@ -196,6 +213,15 @@
             <a class="button-link" href={pluginInstallUrl} target="_blank" rel="noreferrer">
               Plugin installation guide
             </a>
+            <button
+              type="button"
+              class="icon-button"
+              on:click={() => setAudioPreference(!audioEnabled)}
+              aria-label={audioEnabled ? 'Mute audio cues' : 'Unmute audio cues'}
+            >
+              <i class="fas {audioEnabled ? 'fa-volume-up' : 'fa-volume-mute'}" aria-hidden="true"></i>
+              <span class="sr-only">{audioEnabled ? 'Mute' : 'Unmute'} audio cues</span>
+            </button>
           </div>
         </div>
       {/if}
@@ -203,7 +229,11 @@
   </nav>
 
   <main class="screen-shell">
-    <svelte:component this={ActiveScreen} />
+    {#if $activeScreenId === 'presetRunner'}
+      <TimerScreen {audioEnabled} />
+    {:else}
+      <svelte:component this={ActiveScreen} />
+    {/if}
   </main>
 </div>
 

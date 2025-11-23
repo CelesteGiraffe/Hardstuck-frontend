@@ -6,6 +6,8 @@
   import { profileStore } from './profileStore';
   import type { Preset, PresetBlock, SessionBlockPayload, SessionPayload } from './api';
 
+  export let audioEnabled = true;
+
   const formatDuration = (seconds = 0) => {
     const totalSeconds = Math.max(0, Math.round(seconds));
     const minutes = Math.floor(totalSeconds / 60);
@@ -20,10 +22,6 @@
 
   const PROGRESS_RADIUS = 70;
   const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
-  const STORAGE_KEYS = {
-    audio: 'timer-audio-cues',
-    vibration: 'timer-vibration-cues',
-  } as const;
 
   let timerId: number | null = null;
   let currentBlockIndex = 0;
@@ -32,7 +30,7 @@
   let sessionComplete = false;
   let sessionStartTime: number | null = null;
   let sessionEndTime: number | null = null;
-  let cuePreferences = { audio: true, vibration: true };
+  let cuePreferences = { audio: true };
   let lastPresetId: number | null = null;
   let blockOverrides: Record<number, { remaining?: string; actual?: string }> = {};
   let blockNotes: Record<number, string> = {};
@@ -161,7 +159,6 @@
   }
 
   onMount(() => {
-    loadCuePreferences();
     if (hasPreset) {
       remainingSeconds = presetBlocks[0]?.durationSeconds ?? 0;
     }
@@ -254,29 +251,9 @@
     }
   }
 
-  function loadCuePreferences() {
-    if (typeof localStorage === 'undefined') return;
-    const storedAudio = localStorage.getItem(STORAGE_KEYS.audio);
-    const storedVibration = localStorage.getItem(STORAGE_KEYS.vibration);
-    cuePreferences = {
-      audio: storedAudio === null ? true : storedAudio === 'true',
-      vibration: storedVibration === null ? true : storedVibration === 'true',
-    };
-  }
-
-  function setCuePreference(type: 'audio' | 'vibration', value: boolean) {
-    cuePreferences = { ...cuePreferences, [type]: value };
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS[type], String(value));
-    }
-  }
-
   function triggerCues() {
-    if (cuePreferences.audio) {
+    if (audioEnabled) {
       playAudioCue();
-    }
-    if (cuePreferences.vibration && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate([120, 80, 120]);
     }
   }
 
@@ -492,26 +469,6 @@
             >
               Skip
             </button>
-          </div>
-          <div class="timer-cues">
-            <label class="cue-toggle">
-              <input
-                type="checkbox"
-                data-testid="audio-toggle"
-                checked={cuePreferences.audio}
-                on:change={(event) => setCuePreference('audio', event.currentTarget.checked)}
-              />
-              Audio cues
-            </label>
-            <label class="cue-toggle">
-              <input
-                type="checkbox"
-                data-testid="vibration-toggle"
-                checked={cuePreferences.vibration}
-                on:change={(event) => setCuePreference('vibration', event.currentTarget.checked)}
-              />
-              Vibration cues
-            </label>
           </div>
           {#if activeBlock}
             <div class="override-group">
@@ -1007,19 +964,6 @@
     display: flex;
     gap: 1rem;
     flex-wrap: wrap;
-  }
-
-  .cue-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.85rem;
-    color: var(--text-muted);
-  }
-
-  .cue-toggle input {
-    width: 1rem;
-    height: 1rem;
   }
 
   .blocks-section {
