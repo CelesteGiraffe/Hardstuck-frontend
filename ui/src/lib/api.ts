@@ -451,6 +451,17 @@ export async function getSessions(filters: { start?: string; end?: string } = {}
   return (await response.json()) as Session[];
 }
 
+export async function deleteSession(id: number): Promise<void> {
+  const response = await fetch(buildUrl(`/api/sessions/${id}`), {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to delete session');
+  }
+}
+
 export async function getSkillSummary({ from, to }: { from?: string; to?: string } = {}): Promise<SkillSummary[]> {
   const params = new URLSearchParams();
   if (from) params.set('from', from);

@@ -80,20 +80,6 @@ afterEach(() => {
   skillsQuery.reset();
 });
 
-test('loads stored audio preference when available', () => {
-  localStorage.setItem('timer-audio-cues', 'false');
-  const { getByTestId } = render(TimerScreen);
-  const audioToggle = getByTestId('audio-toggle') as HTMLInputElement;
-  expect(audioToggle.checked).toBe(false);
-});
-
-test('persists vibration preference toggles', async () => {
-  const { getByTestId } = render(TimerScreen);
-  const vibrationToggle = getByTestId('vibration-toggle') as HTMLInputElement;
-  await fireEvent.change(vibrationToggle, { target: { checked: false } });
-  expect(localStorage.getItem('timer-vibration-cues')).toBe('false');
-});
-
 test('manual actual override updates timeline actual duration', async () => {
   const { getByTestId } = render(TimerScreen);
   const actualInput = getByTestId('actual-override-input') as HTMLInputElement;

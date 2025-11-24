@@ -166,8 +166,13 @@ const insertSessionBlockStmt = db.prepare(
 const selectSessionBlocksStmt = db.prepare(
   'SELECT id, session_id AS sessionId, block_type AS type, skill_ids AS skillIdsJson, planned_duration AS plannedDuration, actual_duration AS actualDuration, notes FROM session_blocks WHERE session_id = ? ORDER BY id ASC;'
 );
+const deleteSessionBlocksBySessionStmt = db.prepare('DELETE FROM session_blocks WHERE session_id = ?;');
+const deleteSessionStmt = db.prepare('DELETE FROM sessions WHERE id = ?;');
 const clearSessionBlocksStmt = db.prepare('DELETE FROM session_blocks;');
 const clearSessionsStmt = db.prepare('DELETE FROM sessions;');
+const selectSessionByIdStmt = db.prepare(
+  'SELECT id, started_time AS startedTime, finished_time AS finishedTime, source, preset_id AS presetId, notes, actual_duration AS actualDuration, skill_ids AS skillIdsJson FROM sessions WHERE id = ?;'
+);
 
 const selectProfileStmt = db.prepare(
   'SELECT id, name, avatar_url AS avatarUrl, timezone, default_weekly_target_minutes AS defaultWeeklyTargetMinutes FROM profile_settings LIMIT 1;'
@@ -736,6 +741,16 @@ function getSessions({ start, end } = {}) {
   return resp.map(buildSessionResponse);
 }
 
+function getSessionById(id) {
+  const parsed = Number(id);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error('invalid session id');
+  }
+
+  const session = selectSessionByIdStmt.get(parsed);
+  return session ? buildSessionResponse(session) : null;
+}
+
 function getSkillDurationSummary({ from, to } = {}) {
   const conditions = ['sb.skill_ids IS NOT NULL', 'json_valid(sb.skill_ids)'];
   const params = [];
@@ -845,6 +860,30 @@ function saveSession(session) {
     source: session.source,
   });
   return saved;
+}
+
+function deleteSession(id) {
+  const parsed = Number(id);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error('invalid session id');
+  }
+
+  const existing = selectSessionByIdStmt.get(parsed);
+  if (!existing) {
+    throw new Error('session not found');
+  }
+
+  const remove = db.transaction((sessionId) => {
+    deleteSessionBlocksBySessionStmt.run(sessionId);
+    deleteSessionStmt.run(sessionId);
+  });
+
+  remove(parsed);
+  emitDatabaseChange({
+    type: 'session',
+    action: 'delete',
+    sessionId: parsed,
+  });
 }
 
 function clearSessionTables() {
@@ -1283,7 +1322,9 @@ module.exports = {
   deletePreset,
   clearPresetTables,
   getSessions,
+  getSessionById,
   saveSession,
+  deleteSession,
   clearSessionTables,
   getSkillDurationSummary,
   getProfile,

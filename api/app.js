@@ -19,6 +19,7 @@ const {
   deletePreset,
   getSessions,
   saveSession,
+  deleteSession,
   getSkillDurationSummary,
   getProfile,
   updateProfile,
@@ -777,6 +778,23 @@ app.post('/api/sessions', (req, res) => {
     res.status(201).json(saved);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/sessions/:id', (req, res) => {
+  const sessionId = Number(req.params.id);
+
+  if (!Number.isInteger(sessionId) || sessionId <= 0) {
+    return res.status(400).json({ error: 'invalid session id' });
+  }
+
+  try {
+    deleteSession(sessionId);
+    res.status(204).end();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to delete session';
+    const status = message === 'session not found' ? 404 : 400;
+    res.status(status).json({ error: message });
   }
 });
 

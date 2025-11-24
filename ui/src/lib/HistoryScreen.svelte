@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import {
     createMmrLog,
     deleteMmrRecord,
@@ -8,10 +8,12 @@
     exportHistoryCsv,
     importHistoryCsv,
     updateMmrRecord,
+    deleteSession,
   } from './api';
   import type { Session, SessionBlock, SkillSummary, MmrRecord } from './api';
   import { useSkills } from './useSkills';
   import html2canvas from 'html2canvas';
+  import Chart from 'chart.js/auto';
   import {
     mmrLogQuery,
     presetsQuery,
@@ -22,7 +24,7 @@
   import { onServerUpdate } from './serverUpdates';
 
   let sessions: Session[] = [];
-  let selectedSession: Session | null = null;
+  let expandedSessionIds: Set<number> = new Set();
   let loadingSessions = true;
   let sessionError: string | null = null;
   let skillMap: Record<number, string> = {};
@@ -139,6 +141,8 @@
   let deleteFilterLoading = false;
   let deleteAllLoading = false;
   let deletingIds: number[] = [];
+  let deletingSessionIds: number[] = [];
+  let sessionDeleteError: string | null = null;
   
   let editingMmrId: number | null = null;
   let editModel: { timestamp: string; mmr: string | number; gamesPlayedDiff: string | number; source: string } = {
@@ -149,6 +153,15 @@
   };
   let savingEdit = false;
   let editError: string | null = null;
+  let skillChart: Chart | null = null;
+  let skillChartCanvas: HTMLCanvasElement | null = null;
+  let comparisonCharts: Record<string, Chart | null> = {};
+  let comparisonEntries: {
+    playlist: string;
+    id: string;
+    records: MmrRecord[];
+    metrics: ReturnType<typeof buildChartMetrics>;
+  }[] = [];
 
   function toDateTimeLocal(iso?: string) {
     if (!iso) return '';
@@ -282,6 +295,15 @@
     return () => {
       unsubscribe();
     };
+  });
+
+  onDestroy(() => {
+    if (skillChart) {
+      skillChart.destroy();
+      skillChart = null;
+    }
+    Object.values(comparisonCharts).forEach((chart) => chart?.destroy());
+    comparisonCharts = {};
   });
 
   async function refreshHistoryData() {
@@ -466,7 +488,7 @@
     exportError = null;
     exportLoading = true;
     try {
-      const target = document.querySelector('.history-mmr');
+      const target = document.querySelector('.history-chart-card');
       if (!target) {
         throw new Error('History card not found');
       }
@@ -560,6 +582,10 @@
     return deletingIds.includes(id);
   }
 
+  function isDeletingSession(id: number) {
+    return deletingSessionIds.includes(id);
+  }
+
   async function handleDeleteMmr(id: number) {
     if (!window.confirm('Delete this MMR record? This cannot be undone.')) {
       return;
@@ -630,6 +656,28 @@
     }
   }
 
+  async function handleDeleteSession(sessionId: number) {
+    if (!window.confirm('Delete this session? This cannot be undone.')) {
+      return;
+    }
+
+    deletingSessionIds = [...deletingSessionIds, sessionId];
+    sessionDeleteError = null;
+    try {
+      await deleteSession(sessionId);
+      if (expandedSessionIds.has(sessionId)) {
+        const next = new Set(expandedSessionIds);
+        next.delete(sessionId);
+        expandedSessionIds = next;
+      }
+      await refreshHistoryData();
+    } catch (err) {
+      sessionDeleteError = err instanceof Error ? err.message : 'Unable to delete session';
+    } finally {
+      deletingSessionIds = deletingSessionIds.filter((id) => id !== sessionId);
+    }
+  }
+
   function buildChartMetrics(
     records: MmrRecord[],
     viewWidth: number,
@@ -693,14 +741,21 @@
   $: chartEndLabel = mmrChartMetrics.endLabel;
   $: mmrChartMinValue = mmrChartMetrics.minValue;
   $: mmrChartMaxValue = mmrChartMetrics.maxValue;
-  $: comparisonSeries = selectedPlaylists.map((playlist) => {
-    const seriesRecords = mmrSeriesByPlaylist[playlist] ?? [];
-    const metrics = buildChartMetrics(seriesRecords, COMPARISON_CHART_WIDTH, COMPARISON_CHART_HEIGHT, COMPARISON_PADDING);
-    const latestPoint = metrics.points[metrics.points.length - 1];
+  function toDomId(value: string) {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'comparison';
+  }
+
+  $: comparisonEntries = selectedPlaylists.map((playlist) => {
+    const records = mmrSeriesByPlaylist[playlist] ?? [];
     return {
       playlist,
-      metrics,
-      latestPoint,
+      id: `comparison-${toDomId(playlist)}`,
+      records,
+      metrics: buildChartMetrics(records, COMPARISON_CHART_WIDTH, COMPARISON_CHART_HEIGHT, COMPARISON_PADDING),
     };
   });
   $: latestPluginRecord = Object.values(mmrSeriesByPlaylist)
@@ -721,8 +776,19 @@
 
   $: chartMaxMinutes = summary.length ? Math.max(...summary.map((item) => item.minutes)) : 0;
 
-  function toggleSession(session: Session) {
-    selectedSession = selectedSession?.id === session.id ? null : session;
+  function isSessionExpanded(sessionId: number) {
+    return expandedSessionIds.has(sessionId);
+  }
+
+  function toggleSession(sessionId: number) {
+    const next = new Set(expandedSessionIds);
+    if (next.has(sessionId)) {
+      next.delete(sessionId);
+    } else {
+      next.add(sessionId);
+    }
+    expandedSessionIds = next;
+    sessionDeleteError = null;
   }
 
   function getPresetName(session: Session) {
@@ -737,254 +803,232 @@
     return block.skillIds.map((id) => skillMap[id] ?? `Skill #${id}`).join(', ');
   }
 
+  function destroySkillChart() {
+    if (skillChart) {
+      skillChart.destroy();
+      skillChart = null;
+    }
+  }
+
+  function destroyComparisonChart(id: string) {
+    const chart = comparisonCharts[id];
+    if (chart) {
+      chart.destroy();
+      delete comparisonCharts[id];
+    }
+  }
+
+  function destroyAllComparisonCharts() {
+    Object.keys(comparisonCharts).forEach((key) => destroyComparisonChart(key));
+  }
+
+  async function renderSkillChart() {
+    if (!skillChartCanvas || summary.length === 0) {
+      destroySkillChart();
+      return;
+    }
+
+    await tick();
+    const labels = summary.map((item) => item.name);
+    const data = summary.map((item) => item.minutes);
+
+    if (skillChart) {
+      skillChart.data.labels = labels;
+      skillChart.data.datasets[0].data = data;
+      skillChart.update();
+      return;
+    }
+
+    skillChart = new Chart(skillChartCanvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Minutes',
+            data,
+            backgroundColor: 'rgba(74, 124, 255, 0.7)',
+            borderRadius: 12,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.formattedValue} minutes` } },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#e5e7eb', font: { size: 11 } },
+            grid: { display: false },
+          },
+          y: {
+            ticks: { color: '#9ca3af' },
+            grid: { color: 'rgba(255,255,255,0.08)' },
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+  }
+
+  async function renderComparisonCharts() {
+    if (!comparisonEntries.length) {
+      destroyAllComparisonCharts();
+      return;
+    }
+
+    await tick();
+    const activeIds = new Set(comparisonEntries.map((entry) => entry.id));
+    Object.keys(comparisonCharts).forEach((id) => {
+      if (!activeIds.has(id)) {
+        destroyComparisonChart(id);
+      }
+    });
+
+    comparisonEntries.forEach((entry) => {
+      const canvas = document.getElementById(entry.id) as HTMLCanvasElement | null;
+      if (!canvas) {
+        return;
+      }
+
+      if (!entry.records.length) {
+        destroyComparisonChart(entry.id);
+        return;
+      }
+
+      const labels = entry.records.map((record) => formatChartDate(record.timestamp));
+      const data = entry.records.map((record) => record.mmr);
+      const baseColor = '#4ade80';
+
+      if (comparisonCharts[entry.id]) {
+        const chart = comparisonCharts[entry.id]!;
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = data;
+        chart.update();
+        return;
+      }
+
+      comparisonCharts[entry.id] = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: entry.playlist,
+              data,
+              borderColor: baseColor,
+              backgroundColor: 'rgba(74, 222, 128, 0.15)',
+              fill: true,
+              tension: 0.35,
+              pointRadius: 2,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.formattedValue} MMR`,
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { color: '#9ca3af', maxRotation: 0 },
+              grid: { display: false },
+            },
+            y: {
+              ticks: { color: '#9ca3af' },
+              grid: { color: 'rgba(255,255,255,0.08)' },
+              beginAtZero: false,
+            },
+          },
+        },
+      });
+    });
+  }
+
+  $: if (skillChartCanvas && summary.length && !summaryLoading) {
+    void renderSkillChart();
+  } else if (!summary.length) {
+    destroySkillChart();
+  }
+
+  $: if (comparisonEntries.length) {
+    void renderComparisonCharts();
+  } else {
+    destroyAllComparisonCharts();
+  }
+
 </script>
 
 <section class="screen-content">
   <h1>History</h1>
   <p>Review your completed training sessions.</p>
 
-  <div class="history-summary">
-    <h2>Training per skill (last 7 days)</h2>
-
-    {#if summaryLoading}
-      <p>Loading summary…</p>
-    {:else if summaryError}
-      <p class="badge offline">{summaryError}</p>
-    {:else if summary.length === 0}
-      <p>No activity recorded yet.</p>
-    {:else}
-      <div class="summary-chart">
-        {#each summary as item}
-          <div class="chart-bar">
-            <div
-              class="chart-bar-value"
-              style={`height: ${chartMaxMinutes ? (item.minutes / chartMaxMinutes) * 160 : 0}px`}
-            >
-              <span>{item.minutes}m</span>
-            </div>
-            <div class="chart-bar-label">{item.name}</div>
-          </div>
-        {/each}
-      </div>
-    {/if}
-  </div>
-
-  <div class="history-mmr">
-    <div class="history-mmr-header">
-      <div>
-        <h2>MMR trend</h2>
-        <p>Weight over time for a single playlist.</p>
-      </div>
-    </div>
-
-    <div class="history-mmr-filters">
-      <label>
-        From
-        <input
-          type="date"
-          bind:value={startDate}
-          max={endDate}
-          on:change={handleDateFilterChange}
-        />
-      </label>
-      <label>
-        To
-        <input
-          type="date"
-          bind:value={endDate}
-          min={startDate}
-          on:change={handleDateFilterChange}
-        />
-      </label>
-      <label>
-        Playlists
-        <select
-          multiple
-          size={Math.min(playlists.length, 6) || 3}
-          bind:value={selectedPlaylists}
-          on:change={handlePlaylistFiltersChange}
-        >
-          {#each playlists as playlist}
-            <option value={playlist}>{playlist}</option>
-          {/each}
-        </select>
-      </label>
-    </div>
-
-    <div class="mmr-status">
-      <p>
-        Latest plugin submission:
-        {#if latestPluginRecord}
-          {formatDate(latestPluginRecord.timestamp)}
-        {:else}
-          — not yet received
-        {/if}
-      </p>
-      {#if latestPluginRecord}
-        <span class={`badge ${dataStale ? 'warning' : 'success'}`}>
-          {dataStale ? 'No logs in 48h' : 'Receiving plugin data'}
-        </span>
-      {:else}
-        <span class="badge offline">Awaiting plugin</span>
-      {/if}
-    </div>
-
-    <form class="manual-mmr-form" on:submit|preventDefault={submitManualMmr}>
-      <div class="manual-mmr-fields">
-        <label>
-          Playlist
-          <select bind:value={manualSelectedPlaylist} disabled={manualSubmitting}>
-            <option value=''>-- select --</option>
-            {#each CANONICAL_PLAYLISTS as cp}
-              <option value={cp}>{cp}</option>
-            {/each}
-          </select>
-        </label>
-
-        {#if manualSelectedPlaylist === 'Other'}
-          <label>
-            Playlist (other)
-            <input
-              placeholder="e.g. Standard"
-              type="text"
-              bind:value={manualPlaylistValue}
-              disabled={manualSubmitting}
-            />
-          </label>
-        {/if}
-        <label>
-          MMR
-          <input
-            type="number"
-            placeholder="2125"
-            step="1"
-            bind:value={manualMmrValue}
-            disabled={manualSubmitting}
-          />
-        </label>
-        <label>
-          Games played diff
-          <input
-            type="number"
-            placeholder="1"
-            step="1"
-            bind:value={manualGamesDiff}
-            disabled={manualSubmitting}
-          />
-        </label>
-      </div>
-      <button type="submit" class="btn-primary" disabled={manualSubmitting}>
-        {manualSubmitting ? 'Logging…' : 'Log MMR'}
-      </button>
-      {#if manualError}
-        <p class="badge offline manual-feedback">{manualError}</p>
-      {:else if manualSuccess}
-        <p class="badge success manual-feedback">{manualSuccess}</p>
-      {/if}
-    </form>
-
-    <div class="history-export">
-      <button type="button" class="btn-tertiary" on:click={copyHistoryCsv} disabled={exportLoading}>
-        Copy history CSV
-      </button>
-      <button type="button" class="btn-tertiary" on:click={downloadHistoryCsvFile} disabled={exportLoading}>
-        Download history CSV
-      </button>
-      <button type="button" class="btn-tertiary" on:click={openImportDialog} disabled={importingCsv}>
-        {importingCsv ? 'Importing…' : 'Import history CSV'}
-      </button>
-      <button type="button" class="btn-tertiary" on:click={downloadHistoryScreenshot} disabled={exportLoading}>
-        Download screenshot
-      </button>
-      <button type="button" class="btn-danger" on:click={handleDeleteFiltered} disabled={deleteFilterLoading}>
-        {deleteFilterLoading ? 'Deleting…' : 'Delete selected data'}
-      </button>
-      <button type="button" class="btn-danger" on:click={handleDeleteAll} disabled={deleteAllLoading}>
-        {deleteAllLoading ? 'Deleting…' : 'Delete all history'}
-      </button>
-      {#if exportMessage}
-        <p class="export-feedback success">{exportMessage}</p>
-      {/if}
-      {#if exportError}
-        <p class="export-feedback offline">{exportError}</p>
-      {/if}
-    </div>
-
-    {#if isImportDialogOpen}
-      <div class="import-dialog-backdrop" role="dialog" aria-modal="true">
-        <div class="import-dialog">
-          <header>
-            <h3>Import history CSV</h3>
-            <button type="button" class="close" on:click={closeImportDialog} aria-label="Close import dialog">
-              ×
-            </button>
-          </header>
-          <p>Paste rows from the exported CSV or upload a file to seed MMR entries. The API reports how many were imported.</p>
-          <label class="import-file-label">
-            Choose CSV file
-            <input type="file" accept=".csv,text/csv" on:change={handleImportFile} />
-          </label>
-          {#if importFileName}
-            <p class="file-meta">Loaded: {importFileName}</p>
-          {/if}
-          <textarea
-            rows="5"
-            placeholder="MMR Playlist,Timestamp,MMR,Games Played Diff,Source"
-            bind:value={importCsvText}
-          ></textarea>
-          <div class="dialog-actions">
-            <button type="button" class="btn-primary" on:click={submitImportCsv} disabled={!importCsvText.trim() || importingCsv}>
-              {importingCsv ? 'Importing…' : 'Import CSV'}
-            </button>
-            <button type="button" class="btn-tertiary" on:click={closeImportDialog} disabled={importingCsv}>
-              Close
-            </button>
-          </div>
-          {#if importStatusMessage}
-            <p class="import-feedback success">{importStatusMessage}</p>
-          {/if}
-          {#if importErrors.length}
-            <div class="import-feedback offline">
-              <p>Issues found:</p>
-              <ul>
-                {#each importErrors as error}
-                  <li>{error}</li>
-                {/each}
-              </ul>
-            </div>
-          {/if}
+  <div class="history-dashboard">
+    {#if comparisonEntries.length}
+      <div class="history-panel history-comparison span-6">
+        <div class="panel-heading">
+          <h2>Playlist comparison</h2>
+          <p>Small multiples let you scan shifts across queues.</p>
         </div>
-      </div>
-    {/if}
 
-    {#if comparisonSeries.length}
-      <div class="playlist-comparison">
-        <h3>Playlist comparison</h3>
+        <div class="history-export">
+          <button type="button" class="btn-tertiary" on:click={copyHistoryCsv} disabled={exportLoading}>
+            Copy history CSV
+          </button>
+          <button type="button" class="btn-tertiary" on:click={downloadHistoryCsvFile} disabled={exportLoading}>
+            Download history CSV
+          </button>
+          <button type="button" class="btn-tertiary" on:click={openImportDialog} disabled={importingCsv}>
+            {importingCsv ? 'Importing…' : 'Import history CSV'}
+          </button>
+          <button type="button" class="btn-tertiary" on:click={downloadHistoryScreenshot} disabled={exportLoading}>
+            Download screenshot
+          </button>
+          <button type="button" class="btn-danger" on:click={handleDeleteFiltered} disabled={deleteFilterLoading}>
+            {deleteFilterLoading ? 'Deleting…' : 'Delete selected data'}
+          </button>
+          <button type="button" class="btn-danger" on:click={handleDeleteAll} disabled={deleteAllLoading}>
+            {deleteAllLoading ? 'Deleting…' : 'Delete all history'}
+          </button>
+        </div>
+        {#if exportMessage}
+          <p class="export-feedback success">{exportMessage}</p>
+        {/if}
+        {#if exportError}
+          <p class="export-feedback offline">{exportError}</p>
+        {/if}
+
         <div class="comparison-grid">
-          {#each comparisonSeries as series}
+          {#each comparisonEntries as entry}
             <div class="comparison-card">
               <div class="comparison-card-header">
-                <strong>{series.playlist}</strong>
-                {#if series.latestPoint}
-                  <span class="comparison-latest">{series.latestPoint.mmr} MMR</span>
+                <strong>{entry.playlist}</strong>
+                {#if entry.records.length}
+                  <span class="comparison-latest">{entry.records[entry.records.length - 1].mmr} MMR</span>
                 {/if}
               </div>
-              {#if series.metrics.coordinates.length}
-                <svg
-                  viewBox={`0 0 ${COMPARISON_CHART_WIDTH} ${COMPARISON_CHART_HEIGHT}`}
-                  role="img"
-                  aria-label={`MMR small multiple for ${series.playlist}`}
-                  class="comparison-chart"
-                >
-                  <polyline class="mmr-chart-line" points={series.metrics.polyline} />
-                  {#each series.metrics.coordinates as coord}
-                    <circle class="mmr-chart-point" cx={coord.x} cy={coord.y} r="2.5" />
-                  {/each}
-                </svg>
+              {#if entry.records.length}
+                <div class="comparison-chart-container">
+                  <canvas
+                    id={entry.id}
+                    width={COMPARISON_CHART_WIDTH}
+                    height={COMPARISON_CHART_HEIGHT}
+                    aria-label={`MMR small multiple for ${entry.playlist}`}
+                  ></canvas>
+                </div>
                 <div class="comparison-meta">
-                  <span>{series.metrics.minValue} — {series.metrics.maxValue} MMR</span>
+                  <span>{entry.metrics.minValue} — {entry.metrics.maxValue} MMR</span>
                   <span>
-                    {formatChartDate(series.metrics.startLabel)} — {formatChartDate(series.metrics.endLabel)}
+                    {formatChartDate(entry.metrics.startLabel)} — {formatChartDate(entry.metrics.endLabel)}
                   </span>
                 </div>
               {:else}
@@ -996,243 +1040,564 @@
       </div>
     {/if}
 
-    {#if mmrLoading}
-      <p>Loading MMR data…</p>
-    {:else if mmrError}
-      <p class="badge offline">{mmrError}</p>
-    {:else if playlists.length === 0}
-      <p>No playlist records yet. Play a ranked match so the plugin can capture data.</p>
-    {:else if !selectedPlaylist}
-      <p>Select a playlist to view a trend.</p>
-    {:else if mmrRecords.length === 0}
-      <p>No MMR data for {selectedPlaylist} in the last {MMR_WINDOW_DAYS} days.</p>
-    {:else}
-      <div class="mmr-chart-wrapper">
-        <div class="mmr-chart-heading">
-          <p class="label">Weight over the last {MMR_WINDOW_DAYS} days</p>
-          <strong>{selectedPlaylist}</strong>
-        </div>
-        <svg
-          class="mmr-chart-plot"
-          viewBox={`0 0 ${CHART_VIEW_WIDTH} ${CHART_VIEW_HEIGHT}`}
-          role="img"
-          aria-label="MMR over time"
-        >
-          <polyline class="mmr-chart-line" points={chartPolyline} />
-          {#each chartCoordinates as coord}
-            <circle class="mmr-chart-point" cx={coord.x} cy={coord.y} r="3" />
-          {/each}
-        </svg>
-        <div class="mmr-chart-meta">
-          <span>{formatChartDate(chartStartLabel)}</span>
-          <span>{formatChartDate(chartEndLabel)}</span>
-        </div>
-        <div class="mmr-chart-scale">
-          <span>{mmrChartMaxValue} MMR</span>
-          <span>{mmrChartMinValue} MMR</span>
-        </div>
+    <div class="history-panel training-overview training-cluster span-6">
+      <div class="panel-heading">
+        <h2>Training focus</h2>
+        <p>Quickly compare skill time and browse recent sessions.</p>
       </div>
 
-      {#if mmrRecords.length}
-        <div class="mmr-records">
-          <h3>MMR records for {selectedPlaylist}</h3>
-          <table class="mmr-record-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>MMR</th>
-                <th>Games</th>
-                <th>Source</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each mmrRecords as rec}
-                <tr>
-                  <td>
-                    {#if editingMmrId === rec.id}
-                      <input type="datetime-local" bind:value={editModel.timestamp} />
-                    {:else}
-                      {formatDate(rec.timestamp)}
-                    {/if}
-                  </td>
-                  <td>
-                    {#if editingMmrId === rec.id}
-                      <input type="number" step="1" bind:value={editModel.mmr} />
-                    {:else}
-                      {rec.mmr}
-                    {/if}
-                  </td>
-                  <td>
-                    {#if editingMmrId === rec.id}
-                      <input type="number" step="1" bind:value={editModel.gamesPlayedDiff} />
-                    {:else}
-                      {rec.gamesPlayedDiff}
-                    {/if}
-                  </td>
-                  <td>
-                    {#if editingMmrId === rec.id}
-                      <input type="text" bind:value={editModel.source} />
-                    {:else}
-                      {rec.source}
-                    {/if}
-                  </td>
-                  <td>
-                    {#if editingMmrId === rec.id}
-                      <button type="button" class="btn-primary" on:click={() => saveEdit(rec)} disabled={savingEdit}>
-                        {savingEdit ? 'Saving…' : 'Save'}
-                      </button>
-                      <button type="button" class="btn-tertiary" on:click={cancelEdit} disabled={savingEdit}>
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        class="btn-danger"
-                        disabled={isDeleting(rec.id)}
-                        on:click={() => handleDeleteMmr(rec.id)}
-                      >
-                        {isDeleting(rec.id) ? 'Deleting…' : 'Delete'}
-                      </button>
-                      {#if editError}
-                        <div class="badge offline">{editError}</div>
-                      {/if}
-                    {:else}
-                      <button type="button" class="btn-tertiary" on:click={() => startEdit(rec)}>
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        class="btn-danger"
-                        disabled={isDeleting(rec.id)}
-                        on:click={() => handleDeleteMmr(rec.id)}
-                      >
-                        {isDeleting(rec.id) ? 'Deleting…' : 'Delete'}
-                      </button>
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+      <div class="dashboard-subcard training-summary-card">
+        <div class="panel-heading subheading">
+          <h3>Training per skill (last 7 days)</h3>
+          <p>See where you invested practice time this week.</p>
         </div>
-      {/if}
-    {/if}
-  </div>
 
-  {#if loadingSessions}
-    <p>Loading sessions…</p>
-  {:else if sessionError}
-    <p class="badge offline">{sessionError}</p>
-  {:else if sessions.length === 0}
-    <p>No sessions recorded yet. Start a preset on the Home screen!</p>
-  {:else}
-    <div class="history-grid">
-      {#each sessions as session}
-        <button
-          class={`history-card ${selectedSession?.id === session.id ? 'expanded' : ''}`}
-          type="button"
-          on:click={() => toggleSession(session)}
-          aria-expanded={selectedSession?.id === session.id}
-        >
-          <div class="history-card-header">
-            <span>{formatDate(session.startedTime)}</span>
-            <span>{totalDurationMinutes(session)} min</span>
+        {#if summaryLoading}
+          <p>Loading summary…</p>
+        {:else if summaryError}
+          <p class="badge offline">{summaryError}</p>
+        {:else if summary.length === 0}
+          <p>No activity recorded yet.</p>
+        {:else}
+          <div class="summary-chart">
+            <canvas
+              bind:this={skillChartCanvas}
+              aria-label="Minutes practiced per skill over the last 7 days"
+            ></canvas>
           </div>
-          <p class="history-card-meta">
-            {session.source} • {getPresetName(session)}
-          </p>
-        </button>
-      {/each}
+        {/if}
+
+        <div class="training-sessions">
+          <div class="training-sessions-heading">
+            <h3>Recent sessions</h3>
+            <p>Tap a card to see block notes without leaving the dashboard.</p>
+          </div>
+
+          {#if loadingSessions}
+            <p>Loading sessions…</p>
+          {:else if sessionError}
+            <p class="badge offline">{sessionError}</p>
+          {:else if sessions.length === 0}
+            <p>No sessions recorded yet. Start a preset on the Home screen!</p>
+          {:else}
+            <div class="history-grid compact">
+              {#each sessions as session}
+                <article class={`history-card ${isSessionExpanded(session.id) ? 'expanded' : ''}`}>
+                  <button
+                    class="history-card-toggle"
+                    type="button"
+                    on:click={() => toggleSession(session.id)}
+                    aria-expanded={isSessionExpanded(session.id)}
+                  >
+                    <div class="history-card-header">
+                      <div>
+                        <span class="history-card-date">{formatDate(session.startedTime)}</span>
+                        <p class="history-card-meta">
+                          {session.source} • {getPresetName(session)}
+                        </p>
+                      </div>
+                      <strong>{totalDurationMinutes(session)} min</strong>
+                    </div>
+                  </button>
+
+                  {#if isSessionExpanded(session.id)}
+                    <div class="history-card-body">
+                      <div class="history-card-meta-grid">
+                        <div>
+                          <p class="meta-label">Started</p>
+                          <p class="meta-value">{formatDate(session.startedTime)}</p>
+                        </div>
+                        {#if session.finishedTime}
+                          <div>
+                            <p class="meta-label">Finished</p>
+                            <p class="meta-value">{formatDate(session.finishedTime)}</p>
+                          </div>
+                        {/if}
+                        <div>
+                          <p class="meta-label">Preset</p>
+                          <p class="meta-value">{getPresetName(session)}</p>
+                        </div>
+                      </div>
+
+                      {#if session.notes}
+                        <div class="reflection-block">
+                          <h4>Session notes</h4>
+                          <p class="reflection-notes">{session.notes}</p>
+                        </div>
+                      {/if}
+
+                      <div class="reflections-content">
+                        {#if session.blocks.length}
+                          {#each session.blocks as block, index}
+                            <div class="reflection-block">
+                              <div class="reflection-block-header">
+                                <h4>Block {index + 1}: {block.type}</h4>
+                                <span>{Math.round(block.actualDuration / 60)}m • planned {Math.round(block.plannedDuration / 60)}m</span>
+                              </div>
+                              <p class="reflection-skills">Skills: {getBlockSkills(block)}</p>
+                              {#if block.notes}
+                                <p class="reflection-notes">{block.notes}</p>
+                              {:else}
+                                <p class="no-reflections">No reflection recorded.</p>
+                              {/if}
+                            </div>
+                          {/each}
+                        {:else}
+                          <p class="no-reflections">No blocks recorded.</p>
+                        {/if}
+                      </div>
+
+                      <div class="history-card-actions">
+                        <button
+                          type="button"
+                          class="btn-danger"
+                          disabled={isDeletingSession(session.id)}
+                          on:click={() => handleDeleteSession(session.id)}
+                        >
+                          {isDeletingSession(session.id) ? 'Deleting…' : 'Delete session'}
+                        </button>
+                      </div>
+                      {#if sessionDeleteError && isSessionExpanded(session.id)}
+                        <p class="badge offline history-card-error">{sessionDeleteError}</p>
+                      {/if}
+                    </div>
+                  {/if}
+                </article>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
     </div>
 
-    {#if selectedSession}
-      <div class="session-detail">
-        <h2>Session details</h2>
-        <p>
-          <strong>Started:</strong> {formatDate(selectedSession.startedTime)}
-        </p>
-        {#if selectedSession.finishedTime}
-          <p>
-            <strong>Finished:</strong> {formatDate(selectedSession.finishedTime)}
-          </p>
-        {/if}
-        <p>
-          <strong>Source:</strong> {selectedSession.source} • {getPresetName(selectedSession)}
-        </p>
-        <ul class="session-blocks">
-          {#each selectedSession.blocks as block, index}
-            <li>
-              <div class="block-top">
-                <strong>
-                  Block {index + 1}: {block.type}
-                </strong>
-                <span>{block.actualDuration}s actual • {block.plannedDuration}s planned</span>
-              </div>
-              <p class="block-skills">Skills: {getBlockSkills(block)}</p>
-              {#if block.notes}
-                <p class="block-notes">Notes: {block.notes}</p>
-              {/if}
-            </li>
-          {/each}
-        </ul>
+    <div class="history-panel history-chart-card mmr-cluster span-12">
+      <div class="panel-heading">
+        <h2>MMR insight</h2>
+        <p>Filters, manual logs, and charts stay together for fast review.</p>
       </div>
-    {/if}
+
+      <div class="mmr-overview-grid">
+        <div class="dashboard-subcard mmr-filter-card">
+          <div class="panel-heading subheading">
+            <h3>Filters</h3>
+            <p>Choose the time window and playlists.</p>
+          </div>
+
+          <div class="history-mmr-filters">
+            <label>
+              From
+              <input
+                type="date"
+                bind:value={startDate}
+                max={endDate}
+                on:change={handleDateFilterChange}
+              />
+            </label>
+            <label>
+              To
+              <input
+                type="date"
+                bind:value={endDate}
+                min={startDate}
+                on:change={handleDateFilterChange}
+              />
+            </label>
+            <label>
+              Playlists
+              <select
+                multiple
+                size={Math.min(playlists.length, 6) || 3}
+                bind:value={selectedPlaylists}
+                on:change={handlePlaylistFiltersChange}
+              >
+                {#each playlists as playlist}
+                  <option value={playlist}>{playlist}</option>
+                {/each}
+              </select>
+            </label>
+          </div>
+
+          <div class="mmr-status">
+            <p>
+              Latest plugin submission:
+              {#if latestPluginRecord}
+                {formatDate(latestPluginRecord.timestamp)}
+              {:else}
+                — not yet received
+              {/if}
+            </p>
+            {#if latestPluginRecord}
+              <span class={`badge ${dataStale ? 'warning' : 'success'}`}>
+                {dataStale ? 'No logs in 48h' : 'Receiving plugin data'}
+              </span>
+            {:else}
+              <span class="badge offline">Awaiting plugin</span>
+            {/if}
+          </div>
+        </div>
+
+        <div class="dashboard-subcard manual-entry-card">
+          <div class="panel-heading subheading">
+            <h3>Manual MMR entry</h3>
+            <p>Capture a reading without leaving the dashboard.</p>
+          </div>
+
+          <form class="manual-mmr-form" on:submit|preventDefault={submitManualMmr}>
+            <div class="manual-mmr-fields">
+              <label>
+                Playlist
+                <select bind:value={manualSelectedPlaylist} disabled={manualSubmitting}>
+                  <option value=''>-- select --</option>
+                  {#each CANONICAL_PLAYLISTS as cp}
+                    <option value={cp}>{cp}</option>
+                  {/each}
+                </select>
+              </label>
+
+              {#if manualSelectedPlaylist === 'Other'}
+                <label>
+                  Playlist (other)
+                  <input
+                    placeholder="e.g. Standard"
+                    type="text"
+                    bind:value={manualPlaylistValue}
+                    disabled={manualSubmitting}
+                  />
+                </label>
+              {/if}
+              <label>
+                MMR
+                <input
+                  type="number"
+                  placeholder="2125"
+                  step="1"
+                  bind:value={manualMmrValue}
+                  disabled={manualSubmitting}
+                />
+              </label>
+              <label>
+                Games played diff
+                <input
+                  type="number"
+                  placeholder="1"
+                  step="1"
+                  bind:value={manualGamesDiff}
+                  disabled={manualSubmitting}
+                />
+              </label>
+            </div>
+            <button type="submit" class="btn-primary" disabled={manualSubmitting}>
+              {manualSubmitting ? 'Logging…' : 'Log MMR'}
+            </button>
+            {#if manualError}
+              <p class="badge offline manual-feedback">{manualError}</p>
+            {:else if manualSuccess}
+              <p class="badge success manual-feedback">{manualSuccess}</p>
+            {/if}
+          </form>
+        </div>
+
+        <div class="dashboard-subcard mmr-chart-stack">
+          {#if mmrLoading}
+            <p>Loading MMR data…</p>
+          {:else if mmrError}
+            <p class="badge offline">{mmrError}</p>
+          {:else if playlists.length === 0}
+            <p>No playlist records yet. Play a ranked match so the plugin can capture data.</p>
+          {:else if !selectedPlaylist}
+            <p>Select a playlist to view a trend.</p>
+          {:else if mmrRecords.length === 0}
+            <p>No MMR data for {selectedPlaylist} in the last {MMR_WINDOW_DAYS} days.</p>
+          {:else}
+            <div class="mmr-chart-wrapper">
+              <div class="mmr-chart-heading">
+                <p class="label">Weight over the last {MMR_WINDOW_DAYS} days</p>
+                <strong>{selectedPlaylist}</strong>
+              </div>
+              <svg
+                class="mmr-chart-plot"
+                viewBox={`0 0 ${CHART_VIEW_WIDTH} ${CHART_VIEW_HEIGHT}`}
+                role="img"
+                aria-label="MMR over time"
+              >
+                <polyline class="mmr-chart-line" points={chartPolyline} />
+                {#each chartCoordinates as coord}
+                  <circle class="mmr-chart-point" cx={coord.x} cy={coord.y} r="3" />
+                {/each}
+              </svg>
+              <div class="mmr-chart-meta">
+                <span>{formatChartDate(chartStartLabel)}</span>
+                <span>{formatChartDate(chartEndLabel)}</span>
+              </div>
+              <div class="mmr-chart-scale">
+                <span>{mmrChartMaxValue} MMR</span>
+                <span>{mmrChartMinValue} MMR</span>
+              </div>
+            </div>
+
+            {#if mmrRecords.length}
+              <div class="mmr-records">
+                <h3>MMR records for {selectedPlaylist}</h3>
+                <div class="mmr-record-table-wrapper">
+                  <table class="mmr-record-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>MMR</th>
+                        <th>Games</th>
+                        <th>Source</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each mmrRecords as rec}
+                        <tr>
+                          <td>
+                            {#if editingMmrId === rec.id}
+                              <input type="datetime-local" bind:value={editModel.timestamp} />
+                            {:else}
+                              {formatDate(rec.timestamp)}
+                            {/if}
+                          </td>
+                          <td>
+                            {#if editingMmrId === rec.id}
+                              <input type="number" step="1" bind:value={editModel.mmr} />
+                            {:else}
+                              {rec.mmr}
+                            {/if}
+                          </td>
+                          <td>
+                            {#if editingMmrId === rec.id}
+                              <input type="number" step="1" bind:value={editModel.gamesPlayedDiff} />
+                            {:else}
+                              {rec.gamesPlayedDiff}
+                            {/if}
+                          </td>
+                          <td>
+                            {#if editingMmrId === rec.id}
+                              <input type="text" bind:value={editModel.source} />
+                            {:else}
+                              {rec.source}
+                            {/if}
+                          </td>
+                          <td>
+                            {#if editingMmrId === rec.id}
+                              <button type="button" class="btn-primary" on:click={() => saveEdit(rec)} disabled={savingEdit}>
+                                {savingEdit ? 'Saving…' : 'Save'}
+                              </button>
+                              <button type="button" class="btn-tertiary" on:click={cancelEdit} disabled={savingEdit}>
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-danger"
+                                disabled={isDeleting(rec.id)}
+                                on:click={() => handleDeleteMmr(rec.id)}
+                              >
+                                {isDeleting(rec.id) ? 'Deleting…' : 'Delete'}
+                              </button>
+                              {#if editError}
+                                <div class="badge offline">{editError}</div>
+                              {/if}
+                            {:else}
+                              <button type="button" class="btn-tertiary" on:click={() => startEdit(rec)}>
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-danger"
+                                disabled={isDeleting(rec.id)}
+                                on:click={() => handleDeleteMmr(rec.id)}
+                              >
+                                {isDeleting(rec.id) ? 'Deleting…' : 'Delete'}
+                              </button>
+                            {/if}
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            {/if}
+          {/if}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {#if isImportDialogOpen}
+    <div class="import-dialog-backdrop" role="dialog" aria-modal="true">
+      <div class="import-dialog">
+        <header>
+          <h3>Import history CSV</h3>
+          <button type="button" class="close" on:click={closeImportDialog} aria-label="Close import dialog">
+            ×
+          </button>
+        </header>
+        <p>Paste rows from the exported CSV or upload a file to seed MMR entries. The API reports how many were imported.</p>
+        <label class="import-file-label">
+          Choose CSV file
+          <input type="file" accept=".csv,text/csv" on:change={handleImportFile} />
+        </label>
+        {#if importFileName}
+          <p class="file-meta">Loaded: {importFileName}</p>
+        {/if}
+        <textarea
+          rows="5"
+          placeholder="MMR Playlist,Timestamp,MMR,Games Played Diff,Source"
+          bind:value={importCsvText}
+        ></textarea>
+        <div class="dialog-actions">
+          <button type="button" class="btn-primary" on:click={submitImportCsv} disabled={!importCsvText.trim() || importingCsv}>
+            {importingCsv ? 'Importing…' : 'Import CSV'}
+          </button>
+          <button type="button" class="btn-tertiary" on:click={closeImportDialog} disabled={importingCsv}>
+            Close
+          </button>
+        </div>
+        {#if importStatusMessage}
+          <p class="import-feedback success">{importStatusMessage}</p>
+        {/if}
+        {#if importErrors.length}
+          <div class="import-feedback offline">
+            <p>Issues found:</p>
+            <ul>
+              {#each importErrors as error}
+                <li>{error}</li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+      </div>
+    </div>
   {/if}
+
 </section>
 
 <style>
-  .history-summary {
+  .history-dashboard {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+  }
+
+  .history-panel {
     background: var(--card-background, rgba(15, 23, 42, 0.95));
     border-radius: 16px;
     padding: 1.25rem;
-    margin-bottom: 1.5rem;
     box-shadow: var(--history-card-shadow);
     color: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    grid-column: span 12;
+  }
+
+  .history-panel[class*='span-'] {
+    grid-column: span 12;
+  }
+
+  @media (min-width: 1100px) {
+    .history-panel.span-4 {
+      grid-column: span 4;
+    }
+
+    .history-panel.span-5 {
+      grid-column: span 5;
+    }
+
+    .history-panel.span-6 {
+      grid-column: span 6;
+    }
+
+    .history-panel.span-7 {
+      grid-column: span 7;
+    }
+
+    .history-panel.span-8 {
+      grid-column: span 8;
+    }
+  }
+
+  .panel-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .panel-heading h2 {
+    margin: 0;
+  }
+
+  .panel-heading p {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.9rem;
+  }
+
+  .dashboard-subcard {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .training-summary-card {
+    gap: 1.25rem;
+  }
+
+  .panel-heading.subheading h3 {
+    margin: 0;
+  }
+
+  .panel-heading.subheading p {
+    font-size: 0.85rem;
+  }
+
+  .history-summary {
+    gap: 1rem;
   }
 
   .summary-chart {
-    display: flex;
-    gap: 0.75rem;
-    align-items: flex-end;
-    min-height: 180px;
+    min-height: 220px;
   }
 
-  .chart-bar {
-    flex: 1;
+  .summary-chart canvas {
+    width: 100%;
+    height: 220px;
+  }
+
+  .training-sessions {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 1rem;
+    padding-top: 1rem;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
+    gap: 0.75rem;
   }
 
-  .chart-bar-value {
-    width: 100%;
-    background: linear-gradient(180deg, #8dd9ff, #4a7cff);
-    border-radius: 999px;
+  .training-sessions-heading {
     display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    font-size: 0.75rem;
-    color: #fff;
-    font-weight: 600;
+    flex-direction: column;
+    gap: 0.2rem;
   }
 
-  .chart-bar-value span {
-    padding-bottom: 0.25rem;
-  }
-
-  .chart-bar-label {
-    font-size: 0.75rem;
-    text-align: center;
-    color: rgba(255, 255, 255, 0.65);
-    max-width: 60px;
-    word-break: break-word;
+  .training-sessions-heading h3 {
+    margin: 0;
   }
 
   .manual-mmr-form {
-    margin-bottom: 1.25rem;
-    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.2));
-    padding-bottom: 1rem;
+    margin: 0;
+    border: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   .manual-mmr-fields {
@@ -1281,8 +1646,14 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0;
     font-size: 0.85rem;
+  }
+
+  .mmr-overview-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 
   .import-dialog-backdrop {
@@ -1428,23 +1799,6 @@
     border-color: rgba(15, 23, 42, 0.2);
   }
 
-  .history-mmr {
-    background: var(--card-background, rgba(15, 23, 42, 0.95));
-    border-radius: 16px;
-    padding: 1.25rem;
-    margin-bottom: 1.5rem;
-    box-shadow: var(--history-card-shadow);
-    color: #fff;
-  }
-
-  .history-mmr-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-
   .history-mmr-filters {
     display: grid;
     gap: 0.75rem;
@@ -1479,9 +1833,16 @@
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
     font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.7);
+  }
+
+  @media (max-width: 640px) {
+    .mmr-status {
+      flex-direction: column;
+      align-items: flex-start;
+    }
   }
 
   .mmr-status .badge {
@@ -1497,15 +1858,6 @@
 
   .playlist-comparison {
     margin-bottom: 1rem;
-  }
-
-  .playlist-comparison h3 {
-    margin: 0 0 0.75rem;
-    font-size: 0.85rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.8);
-    font-weight: 600;
   }
 
   .comparison-grid {
@@ -1536,10 +1888,14 @@
     color: rgba(255, 255, 255, 0.85);
   }
 
-  .comparison-chart {
-    width: 100%;
-    height: auto;
+  .comparison-chart-container {
+    height: 150px;
     margin-bottom: 0.35rem;
+  }
+
+  .comparison-chart-container canvas {
+    width: 100%;
+    height: 150px;
   }
 
   .comparison-meta {
@@ -1557,14 +1913,159 @@
     color: rgba(255, 255, 255, 0.7);
   }
 
-  .history-mmr h2 {
-    margin: 0;
+  .history-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
   }
 
-  .history-mmr p {
-    margin: 0.25rem 0 0;
+  .history-grid.compact {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .history-card {
+    background: rgba(15, 23, 42, 0.9);
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+    box-shadow: var(--history-card-shadow);
+  }
+
+  .history-card-toggle {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: inherit;
+    padding: 1rem 1.25rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .history-grid.compact .history-card-toggle {
+    padding: 0.75rem 1rem;
+  }
+
+  .history-card-toggle:focus-visible {
+    outline: 2px solid rgba(74, 124, 255, 0.7);
+  }
+
+  .history-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .history-card-date {
+    display: block;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .history-card-meta {
+    margin: 0.15rem 0 0;
     color: rgba(255, 255, 255, 0.65);
+    font-size: 0.85rem;
+  }
+
+  .history-grid.compact .history-card-meta {
+    font-size: 0.8rem;
+  }
+
+  .history-card strong {
+    font-size: 1.1rem;
+  }
+
+  .history-grid.compact .history-card strong {
+    font-size: 1rem;
+  }
+
+  .history-card-body {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0 1.25rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    background: rgba(15, 23, 42, 0.95);
+  }
+
+  .history-grid.compact .history-card-body {
+    padding: 0 1rem 1rem;
+  }
+
+  .history-card-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.5rem;
+  }
+
+  .meta-label {
+    margin: 0;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  .meta-value {
+    margin: 0.15rem 0 0;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .reflections-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .reflection-block {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 0.75rem;
+    background: rgba(8, 13, 23, 0.9);
+  }
+
+  .reflection-block-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .reflection-block h4 {
+    margin: 0;
     font-size: 0.9rem;
+  }
+
+  .reflection-skills {
+    margin: 0.35rem 0;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .reflection-notes {
+    margin: 0;
+    white-space: pre-wrap;
+    line-height: 1.4;
+  }
+
+  .no-reflections {
+    margin: 0.25rem 0 0;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-style: italic;
+  }
+
+  .history-card-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .history-card-error {
+    margin: 0;
+    margin-top: 0.5rem;
   }
 
   .mmr-chart-wrapper {
@@ -1622,6 +2123,10 @@
     font-size: 0.9rem;
     font-weight: 600;
     color: #fff;
+  }
+
+  .mmr-record-table-wrapper {
+    overflow-x: auto;
   }
 
   .mmr-record-table {

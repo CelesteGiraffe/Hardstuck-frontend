@@ -14,6 +14,7 @@
     "test:full": "npm run test:base && npm run test:bakkes"
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
     "html2canvas": "^1.4.1"
   },
   "devDependencies": {

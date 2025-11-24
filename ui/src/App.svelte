@@ -26,7 +26,7 @@
   type Screen = {
     id: 'home' | 'presetRunner' | 'skills' | 'presets' | 'history' | 'profile';
     label: string;
-    component: typeof HomeScreen;
+    component: any;
   };
 
   const screens: Screen[] = [
