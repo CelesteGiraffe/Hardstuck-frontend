@@ -33,6 +33,7 @@ describe.skip('PresetsScreen share workflow', () => {
     {
       id: 1,
       name: 'Stream routine',
+      orderIndex: 0,
       blocks: [
         { id: 1, presetId: 1, orderIndex: 0, skillId: 1, type: 'Warm up', durationSeconds: 120, notes: '' },
       ],

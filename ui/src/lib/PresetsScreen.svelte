@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PresetForm from './presets/PresetForm.svelte';
-  import { getPresetShare, importPresetShare, getPresets, deletePreset } from './api';
+  import { getPresetShare, importPresetShare, getPresets, deletePreset, updatePresetOrder } from './api';
   import type { Preset } from './api';
   import { useSkills } from './useSkills';
   import { launchPreset } from './stores';
@@ -28,6 +28,8 @@
   let lastSelectedPresetId: number | null = null;
   let showImportDialog = false;
   let showShareDialog = false;
+  let draggedPreset: Preset | null = null;
+  let dragOverIndex: number | null = null;
 
   $: selectedPreset = presets.find((preset) => preset.id === selectedPresetId) ?? null;
   $: skillLookup = Object.fromEntries($skillsStore.skills.map((skill) => [skill.id, skill.name]));
@@ -223,6 +225,59 @@
     parts.push(`${remainingSeconds}s`);
     return parts.join(' ');
   }
+
+  function handleDragStart(event: DragEvent, preset: Preset) {
+    draggedPreset = preset;
+    event.dataTransfer!.effectAllowed = 'move';
+    event.dataTransfer!.setData('text/plain', preset.id.toString());
+  }
+
+  function handleDragOver(event: DragEvent, index: number) {
+    event.preventDefault();
+    dragOverIndex = index;
+  }
+
+  function handleDragLeave() {
+    dragOverIndex = null;
+  }
+
+  async function handleDrop(event: DragEvent, dropIndex: number) {
+    event.preventDefault();
+    dragOverIndex = null;
+
+    if (!draggedPreset) return;
+
+    const draggedIndex = presets.findIndex(p => p.id === draggedPreset!.id);
+    if (draggedIndex === -1 || draggedIndex === dropIndex) return;
+
+    // Reorder the array
+    const newPresets = [...presets];
+    const [removed] = newPresets.splice(draggedIndex, 1);
+    newPresets.splice(dropIndex, 0, removed);
+
+    presets = newPresets;
+
+    // Update selection if necessary
+    if (selectedPresetId === draggedPreset.id) {
+      selectedPresetId = draggedPreset.id;
+    }
+
+    // Send new order to server
+    try {
+      await updatePresetOrder(newPresets.map(p => p.id));
+    } catch (error) {
+      console.error('Failed to update preset order', error);
+      // Revert on error
+      await refreshPresets();
+    }
+
+    draggedPreset = null;
+  }
+
+  function handleDragEnd() {
+    draggedPreset = null;
+    dragOverIndex = null;
+  }
 </script>
 
 <section class="screen-content presets-shell">
@@ -280,8 +335,19 @@
         <p class="form-error">No presets yet. Use the form to build a routine.</p>
       {:else}
         <ul>
-          {#each presets as preset}
-            <li>
+          {#each presets as preset, index}
+            <li
+              draggable="true"
+              on:dragstart={(e) => handleDragStart(e, preset)}
+              on:dragend={handleDragEnd}
+              on:dragover={(e) => handleDragOver(e, index)}
+              on:dragleave={handleDragLeave}
+              on:drop={(e) => handleDrop(e, index)}
+              class:drag-over={dragOverIndex === index}
+            >
+              <div class="drag-handle" aria-label="Drag to reorder">
+                <i class="fas fa-grip-vertical" aria-hidden="true"></i>
+              </div>
               <button
                 type="button"
                 class:selected={preset.id === selectedPresetId}
@@ -502,6 +568,36 @@
   .preset-list button.selected {
     border-color: rgba(99, 102, 241, 0.6);
     box-shadow: 0 0 25px rgba(99, 102, 241, 0.2);
+  }
+
+  .preset-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .drag-handle {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    cursor: grab;
+    flex-shrink: 0;
+  }
+
+  .drag-handle:active {
+    cursor: grabbing;
+  }
+
+  .preset-list li.drag-over {
+    background: rgba(99, 102, 241, 0.1);
+    border-radius: 12px;
+  }
+
+  .preset-list li button {
+    flex: 1;
   }
 
   .preset-detail-panel {

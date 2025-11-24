@@ -14,6 +14,7 @@ const {
   ensureFavoriteForUser,
   getAllPresets,
   savePreset,
+  updatePresetOrder,
   exportPresetShare,
   importPresetShare,
   deletePreset,
@@ -606,6 +607,27 @@ app.post('/api/presets/share/import', (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to import shared preset';
     res.status(400).json({ error: message });
+  }
+});
+
+app.put('/api/presets/order', (req, res) => {
+  const { presetIds } = req.body;
+
+  if (!Array.isArray(presetIds)) {
+    return res.status(400).json({ error: 'presetIds must be an array' });
+  }
+
+  for (const id of presetIds) {
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'presetIds must contain positive integers' });
+    }
+  }
+
+  try {
+    updatePresetOrder(presetIds);
+    res.status(204).end();
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 

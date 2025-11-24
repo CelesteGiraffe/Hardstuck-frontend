@@ -20,6 +20,7 @@ import { createSession } from '../api';
 const samplePreset: Preset = {
   id: 1,
   name: 'Focus Flow',
+  orderIndex: 0,
   blocks: [
     {
       id: 1,

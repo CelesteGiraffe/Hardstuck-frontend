@@ -142,11 +142,12 @@ ensureColumn('sessions', 'actual_duration INTEGER DEFAULT 0');
 ensureColumn('sessions', 'skill_ids TEXT');
 ensureColumn('skills', 'favorite_code TEXT');
 ensureColumn('skills', 'favorite_name TEXT');
+ensureColumn('presets', 'order_index INTEGER DEFAULT 0');
 
-const selectPresetsStmt = db.prepare('SELECT id, name FROM presets ORDER BY id ASC;');
-const selectPresetByIdStmt = db.prepare('SELECT id, name FROM presets WHERE id = ?;');
-const insertPresetStmt = db.prepare('INSERT INTO presets (name) VALUES (?);');
-const updatePresetStmt = db.prepare('UPDATE presets SET name = ? WHERE id = ?;');
+const selectPresetsStmt = db.prepare('SELECT id, name, order_index AS orderIndex FROM presets ORDER BY order_index ASC, id ASC;');
+const selectPresetByIdStmt = db.prepare('SELECT id, name, order_index AS orderIndex FROM presets WHERE id = ?;');
+const insertPresetStmt = db.prepare('INSERT INTO presets (name, order_index) VALUES (?, ?);');
+const updatePresetStmt = db.prepare('UPDATE presets SET name = ?, order_index = ? WHERE id = ?;');
 const deletePresetBlocksStmt = db.prepare('DELETE FROM preset_blocks WHERE preset_id = ?;');
 const insertBlockStmt = db.prepare(
   'INSERT INTO preset_blocks (preset_id, order_index, skill_id, type, duration_seconds, notes) VALUES (?, ?, ?, ?, ?, ?);'
@@ -644,9 +645,12 @@ const savePresetTransaction = db.transaction(({ id, name, blocks }) => {
   let presetId = id;
 
   if (presetId) {
-    updatePresetStmt.run(name, presetId);
+    const existing = selectPresetByIdStmt.get(presetId);
+    if (!existing) throw new Error('preset not found');
+    updatePresetStmt.run(name, existing.orderIndex, presetId);
   } else {
-    const info = insertPresetStmt.run(name);
+    const maxOrder = db.prepare('SELECT MAX(order_index) AS maxOrder FROM presets;').get().maxOrder || 0;
+    const info = insertPresetStmt.run(name, maxOrder + 1);
     presetId = info.lastInsertRowid;
   }
 
@@ -663,7 +667,7 @@ const savePresetTransaction = db.transaction(({ id, name, blocks }) => {
     );
   }
 
-  return buildPresetResponse({ id: presetId, name });
+  return buildPresetResponse({ id: presetId, name, orderIndex: selectPresetByIdStmt.get(presetId).orderIndex });
 });
 
 function savePreset(preset) {
@@ -696,6 +700,25 @@ function deletePreset(id) {
     type: 'preset',
     action: 'delete',
     presetId: id,
+  });
+}
+
+function updatePresetOrder(presetIds) {
+  if (!Array.isArray(presetIds)) {
+    throw new Error('presetIds must be an array');
+  }
+
+  const updateOrder = db.transaction((ids) => {
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      db.prepare('UPDATE presets SET order_index = ? WHERE id = ?;').run(i, id);
+    }
+  });
+
+  updateOrder(presetIds);
+  emitDatabaseChange({
+    type: 'preset',
+    action: 'reorder',
   });
 }
 
@@ -1317,6 +1340,7 @@ module.exports = {
   clearSkills,
   getAllPresets,
   savePreset,
+  updatePresetOrder,
   exportPresetShare,
   importPresetShare,
   deletePreset,

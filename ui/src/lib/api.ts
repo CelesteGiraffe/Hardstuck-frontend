@@ -138,6 +138,7 @@ export type PresetBlock = {
 export type Preset = {
   id: number;
   name: string;
+  orderIndex: number;
   blocks: PresetBlock[];
 };
 
@@ -403,6 +404,21 @@ export async function deletePreset(id: number): Promise<void> {
   if (!response.ok) {
     const error = await response.json().catch(() => null);
     throw new Error(error?.error ?? 'Unable to delete preset');
+  }
+}
+
+export async function updatePresetOrder(presetIds: number[]): Promise<void> {
+  const response = await fetch(buildUrl('/api/presets/order'), {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ presetIds }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to update preset order');
   }
 }
 
