@@ -776,10 +776,6 @@
 
   $: chartMaxMinutes = summary.length ? Math.max(...summary.map((item) => item.minutes)) : 0;
 
-  function isSessionExpanded(sessionId: number) {
-    return expandedSessionIds.has(sessionId);
-  }
-
   function toggleSession(sessionId: number) {
     const next = new Set(expandedSessionIds);
     if (next.has(sessionId)) {
@@ -1081,13 +1077,13 @@
             <p>No sessions recorded yet. Start a preset on the Home screen!</p>
           {:else}
             <div class="history-grid compact">
-              {#each sessions as session}
-                <article class={`history-card ${isSessionExpanded(session.id) ? 'expanded' : ''}`}>
+              {#each sessions as session (session.id)}
+                <article class={`history-card ${expandedSessionIds.has(session.id) ? 'expanded' : ''}`}>
                   <button
                     class="history-card-toggle"
                     type="button"
                     on:click={() => toggleSession(session.id)}
-                    aria-expanded={isSessionExpanded(session.id)}
+                    aria-expanded={expandedSessionIds.has(session.id)}
                   >
                     <div class="history-card-header">
                       <div>
@@ -1098,69 +1094,71 @@
                       </div>
                       <strong>{totalDurationMinutes(session)} min</strong>
                     </div>
-                  </button>
 
-                  {#if isSessionExpanded(session.id)}
-                    <div class="history-card-body">
-                      <div class="history-card-meta-grid">
-                        <div>
-                          <p class="meta-label">Started</p>
-                          <p class="meta-value">{formatDate(session.startedTime)}</p>
-                        </div>
-                        {#if session.finishedTime}
+                    {#if expandedSessionIds.has(session.id)}
+                      <div class="history-card-body">
+                        <div class="history-card-meta-grid">
                           <div>
-                            <p class="meta-label">Finished</p>
-                            <p class="meta-value">{formatDate(session.finishedTime)}</p>
+                            <p class="meta-label">Started</p>
+                            <p class="meta-value">{formatDate(session.startedTime)}</p>
+                          </div>
+                          {#if session.finishedTime}
+                            <div>
+                              <p class="meta-label">Finished</p>
+                              <p class="meta-value">{formatDate(session.finishedTime)}</p>
+                            </div>
+                          {/if}
+                          <div>
+                            <p class="meta-label">Preset</p>
+                            <p class="meta-value">{getPresetName(session)}</p>
+                          </div>
+                        </div>
+
+                        {#if session.notes}
+                          <div class="reflection-block">
+                            <h4>Session notes</h4>
+                            <p class="reflection-notes">{session.notes}</p>
                           </div>
                         {/if}
-                        <div>
-                          <p class="meta-label">Preset</p>
-                          <p class="meta-value">{getPresetName(session)}</p>
-                        </div>
-                      </div>
 
-                      {#if session.notes}
-                        <div class="reflection-block">
-                          <h4>Session notes</h4>
-                          <p class="reflection-notes">{session.notes}</p>
-                        </div>
-                      {/if}
-
-                      <div class="reflections-content">
-                        {#if session.blocks.length}
-                          {#each session.blocks as block, index}
-                            <div class="reflection-block">
-                              <div class="reflection-block-header">
-                                <h4>Block {index + 1}: {block.type}</h4>
-                                <span>{Math.round(block.actualDuration / 60)}m • planned {Math.round(block.plannedDuration / 60)}m</span>
+                        <div class="reflections-content">
+                          {#if session.blocks.length}
+                            {#each session.blocks as block, index}
+                              <div class="reflection-block">
+                                <div class="reflection-block-header">
+                                  <h4>Block {index + 1}: {block.type}</h4>
+                                  <span>{Math.round(block.actualDuration / 60)}m • planned {Math.round(block.plannedDuration / 60)}m</span>
+                                </div>
+                                <p class="reflection-skills">Skills: {getBlockSkills(block)}</p>
+                                {#if block.notes}
+                                  <p class="reflection-notes">{block.notes}</p>
+                                {:else}
+                                  <p class="no-reflections">No reflection recorded.</p>
+                                {/if}
                               </div>
-                              <p class="reflection-skills">Skills: {getBlockSkills(block)}</p>
-                              {#if block.notes}
-                                <p class="reflection-notes">{block.notes}</p>
-                              {:else}
-                                <p class="no-reflections">No reflection recorded.</p>
-                              {/if}
-                            </div>
-                          {/each}
-                        {:else}
-                          <p class="no-reflections">No blocks recorded.</p>
-                        {/if}
+                            {/each}
+                          {:else}
+                            <p class="no-reflections">No blocks recorded.</p>
+                          {/if}
+                        </div>
                       </div>
+                    {/if}
+                  </button>
 
-                      <div class="history-card-actions">
-                        <button
-                          type="button"
-                          class="btn-danger"
-                          disabled={isDeletingSession(session.id)}
-                          on:click={() => handleDeleteSession(session.id)}
-                        >
-                          {isDeletingSession(session.id) ? 'Deleting…' : 'Delete session'}
-                        </button>
-                      </div>
-                      {#if sessionDeleteError && isSessionExpanded(session.id)}
-                        <p class="badge offline history-card-error">{sessionDeleteError}</p>
-                      {/if}
+                  {#if expandedSessionIds.has(session.id)}
+                    <div class="history-card-actions">
+                      <button
+                        type="button"
+                        class="btn-danger"
+                        disabled={isDeletingSession(session.id)}
+                        on:click={() => handleDeleteSession(session.id)}
+                      >
+                        {isDeletingSession(session.id) ? 'Deleting…' : 'Delete session'}
+                      </button>
                     </div>
+                    {#if sessionDeleteError}
+                      <p class="badge offline history-card-error">{sessionDeleteError}</p>
+                    {/if}
                   {/if}
                 </article>
               {/each}
@@ -1925,9 +1923,9 @@
   }
 
   .history-card {
-    background: rgba(15, 23, 42, 0.9);
-    border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(15, 23, 42, 0.88);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
     overflow: hidden;
     box-shadow: var(--history-card-shadow);
   }
@@ -1937,13 +1935,13 @@
     background: transparent;
     border: none;
     color: inherit;
-    padding: 1rem 1.25rem;
+    padding: 0.6rem 0.8rem;
     text-align: left;
     cursor: pointer;
   }
 
   .history-grid.compact .history-card-toggle {
-    padding: 0.75rem 1rem;
+    padding: 0.4rem 0.55rem;
   }
 
   .history-card-toggle:focus-visible {
@@ -1953,51 +1951,53 @@
   .history-card-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
+    align-items: baseline;
+    gap: 0.5rem;
   }
 
   .history-card-date {
     display: block;
     font-weight: 600;
     color: #fff;
+    font-size: 0.82rem;
   }
 
   .history-card-meta {
     margin: 0.15rem 0 0;
     color: rgba(255, 255, 255, 0.65);
-    font-size: 0.85rem;
+    font-size: 0.7rem;
   }
 
   .history-grid.compact .history-card-meta {
-    font-size: 0.8rem;
+    font-size: 0.65rem;
   }
 
   .history-card strong {
-    font-size: 1.1rem;
+    font-size: 0.9rem;
   }
 
   .history-grid.compact .history-card strong {
-    font-size: 1rem;
+    font-size: 0.75rem;
   }
 
   .history-card-body {
     border-top: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 0 1.25rem 1.25rem;
+    padding: 0 1rem 1rem;
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
+    gap: 0.7rem;
     background: rgba(15, 23, 42, 0.95);
   }
 
   .history-grid.compact .history-card-body {
-    padding: 0 1rem 1rem;
+    padding: 0 0.75rem 0.75rem;
+    gap: 0.45rem;
   }
 
   .history-card-meta-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.35rem;
   }
 
   .meta-label {
@@ -2061,6 +2061,7 @@
   .history-card-actions {
     display: flex;
     justify-content: flex-end;
+    padding: 0 0.75rem 0.75rem;
   }
 
   .history-card-error {
