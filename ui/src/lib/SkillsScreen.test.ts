@@ -94,4 +94,29 @@ describe('SkillsScreen', () => {
 
     await waitFor(() => expect(getByText('boom')).toBeInTheDocument())
   })
+
+  it('applies mobile layout when the viewport is small', async () => {
+    vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
+
+    // mock matchMedia so the component believes it is on a small screen
+    const mql = {
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    }
+
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (query: string) => mql as unknown as MediaQueryList,
+    })
+
+    const { container } = render(SkillsScreen)
+
+    // the component will render and set a data attribute when mobile
+    await waitFor(() => expect(container.querySelector('.skills-dashboard')).toBeTruthy())
+    const dash = container.querySelector('.skills-dashboard') as HTMLElement
+    expect(dash.getAttribute('data-mobile')).toBe('true')
+  })
 })

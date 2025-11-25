@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { createSkill, deleteSkill, updateSkill, getBakkesFavorites } from './api';
   import type { BakkesFavorite, Skill } from './api';
   import { useSkills } from './useSkills';
@@ -30,6 +30,36 @@
       }
     });
 
+    // separate onMount to track small-screen / mobile state. This keeps desktop behavior unchanged.
+    onMount(() => {
+      if (typeof window !== 'undefined' && 'matchMedia' in window) {
+        _mql = window.matchMedia('(max-width: 640px)')
+        const handle = (ev: MediaQueryListEvent | MediaQueryList) => {
+          // MediaQueryListEvent has a `matches` property, older MediaQueryList may be a boolean-like value
+          isMobile = !!('matches' in ev ? ev.matches : ev)
+        }
+        isMobile = _mql.matches
+        try {
+          _mql.addEventListener('change', handle)
+        } catch {
+          // older environments
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(_mql as any).addListener(handle)
+        }
+      }
+    })
+
+    onDestroy(() => {
+      if (!_mql) return
+      try {
+        _mql.removeEventListener('change', () => null)
+      } catch {
+        // older environments
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(_mql as any).removeListener(() => null)
+      }
+    })
+
   let editingSkillId: number | null = null;
   let editForm = { name: '', category: '', tags: '', notes: '' };
   let editSaving = false;
@@ -37,6 +67,10 @@
 
   let deletingSkillId: number | null = null;
   let deleteError: string | null = null;
+
+  // small-screen detection to adjust layout without changing desktop behaviour
+  let isMobile = false;
+  let _mql: MediaQueryList | null = null;
 
   const skillsStore = useSkills();
   function normalizeTags(input: string) {
@@ -157,7 +191,7 @@
   <h1>Skills</h1>
   <p>Manage skill categories, notes, and tags in one place.</p>
 
-  <div class="skills-dashboard">
+  <div class="skills-dashboard" data-mobile={isMobile}>
     <div class="skills-panel span-6">
       <h2>Add skill</h2>
       <form class="skill-form" on:submit|preventDefault={handleSubmit}>
@@ -339,5 +373,55 @@
     margin-bottom: 1rem;
     font-size: 1.25rem;
     font-weight: 600;
+  }
+
+  /* layout helpers for list items */
+  .skill-summary {
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .skill-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  /* mobile-specific adjustments: stack everything and make forms full width */
+  @media (max-width: 640px) {
+    .skills-dashboard {
+      grid-template-columns: 1fr;
+    }
+
+    .skills-panel.span-6 {
+      --span: 12;
+    }
+
+    .skill-summary {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .skill-actions {
+      margin-top: 0.5rem;
+      justify-content: flex-start;
+      width: 100%;
+      flex-wrap: wrap;
+    }
+
+    .skill-actions button {
+      flex: 0 1 auto;
+    }
+
+    .skill-notes {
+      margin-top: 0.5rem;
+    }
+
+    .skill-inline-form label {
+      display: block;
+      width: 100%;
+    }
   }
 </style>
