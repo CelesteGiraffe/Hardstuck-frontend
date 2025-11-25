@@ -1,3 +1,64 @@
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, waitFor, within, cleanup } from '@testing-library/svelte';
+import * as api from './api';
+import SkillsScreen from './SkillsScreen.svelte';
+import { resetSkillsCacheForTests } from './useSkills';
+import { skillsStore } from './skillsStore';
+
+describe('SkillsScreen training packs UI', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.resetAllMocks();
+    // clear localStorage so tests start fresh
+    localStorage.clear();
+    vi.spyOn(api, 'getBakkesFavorites').mockResolvedValue([]);
+    // prevent the component from calling the real API for skills in these tests
+    vi.spyOn(api, 'getSkills').mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    // ensure DOM is reset between tests and avoid leaving renders behind
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('shows the training packs input and can add an item', async () => {
+    const { getByLabelText, getByTestId, queryByText } = render(SkillsScreen);
+
+    const input = await waitFor(() => getByLabelText('New training pack name')) as HTMLInputElement;
+    const addButton = getByTestId('add-pack-button');
+
+    // initial list is empty
+    expect(queryByText('No training packs added yet.')).toBeTruthy();
+
+    // add a pack
+    await fireEvent.input(input, { target: { value: 'Aerial Training Pack' } });
+    await fireEvent.click(addButton);
+
+    const list = getByTestId('training-list');
+    expect(list.textContent).toContain('Aerial Training Pack');
+  });
+
+  it('allows removing a training pack', async () => {
+    const { getByLabelText, getByTestId, getByText } = render(SkillsScreen);
+
+    const input = await waitFor(() => getByLabelText('New training pack name')) as HTMLInputElement;
+    const addButton = getByTestId('add-pack-button');
+
+    await fireEvent.input(input, { target: { value: 'Shot Pack 1' } });
+    await fireEvent.click(addButton);
+
+    const item = getByText('Shot Pack 1');
+    expect(item).toBeTruthy();
+
+    // remove it
+    const removeBtn = getByText('Remove');
+    await fireEvent.click(removeBtn);
+
+    // removed
+    await waitFor(() => expect(() => getByText('Shot Pack 1')).toThrow());
+  });
+});
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte'
 import * as api from './api'

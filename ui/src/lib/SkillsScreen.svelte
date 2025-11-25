@@ -17,6 +17,9 @@
   let favoritesLoading = true;
   let favoritesError: string | null = null;
   let selectedFavoriteCode = '';
+  // training packs (simple, local reference list stored in localStorage)
+  let trainingPacks: Array<{ id: number; name: string }> = [];
+  let newPackName = '';
 
     onMount(async () => {
       favoritesLoading = true;
@@ -27,6 +30,13 @@
         favoritesError = error instanceof Error ? error.message : 'Unable to load favorites';
       } finally {
         favoritesLoading = false;
+      }
+      // load locally-stored training packs
+      try {
+        const raw = localStorage.getItem('trainingPacks');
+        trainingPacks = raw ? JSON.parse(raw) : [];
+      } catch {
+        trainingPacks = [];
       }
     });
 
@@ -116,6 +126,7 @@
       tags = '';
       notes = '';
       selectedFavoriteCode = '';
+      // clear new pack input but keep packs stored
       await skillsStore.refresh();
     } catch (err) {
       formError = err instanceof Error ? err.message : 'Failed to save skill';
@@ -123,6 +134,27 @@
       saving = false;
     }
   };
+
+  function savePacks() {
+    try {
+      localStorage.setItem('trainingPacks', JSON.stringify(trainingPacks));
+    } catch {
+      // ignore localStorage errors
+    }
+  }
+
+  function addPack() {
+    const name = (newPackName || '').trim();
+    if (!name) return;
+    trainingPacks = [...trainingPacks, { id: Date.now(), name }];
+    newPackName = '';
+    savePacks();
+  }
+
+  function removePack(id: number) {
+    trainingPacks = trainingPacks.filter((p) => p.id !== id);
+    savePacks();
+  }
 
   function beginEdit(skill: Skill) {
     editingSkillId = skill.id;
@@ -212,27 +244,56 @@
           <textarea rows="3" bind:value={notes} placeholder="Optional notes about this skill"></textarea>
         </label>
         <label>
-          Bakkes favorite
-          {#if favoritesLoading}
-            <select disabled>
-              <option>Loading favorites…</option>
-            </select>
-          {:else if favoritesError}
-            <select disabled>
-              <option>{favoritesError}</option>
-            </select>
-          {:else if favorites.length === 0}
-            <select disabled>
-              <option>No favorites yet</option>
-            </select>
-          {:else}
-              <select bind:value={selectedFavoriteCode} data-testid="favorites-select">
-              <option value="">Do not associate a favorite</option>
-              {#each favorites as favorite}
-                <option value={favorite.code}>{favorite.name}</option>
-              {/each}
-            </select>
-          {/if}
+          Training packs
+          <div class="training-packs">
+            <div class="training-add">
+              <input
+                aria-label="New training pack name"
+                placeholder="Add training pack (for reference only)"
+                bind:value={newPackName}
+                data-testid="new-pack-input"
+              />
+              <button type="button" on:click={addPack} data-testid="add-pack-button">Add</button>
+            </div>
+
+            {#if trainingPacks.length === 0}
+              <div class="muted">No training packs added yet.</div>
+            {:else}
+              <ul class="training-list" data-testid="training-list">
+                {#each trainingPacks as pack}
+                  <li class="training-item">
+                    <span>{pack.name}</span>
+                    <button type="button" aria-label="Remove pack" on:click={() => removePack(pack.id)} data-testid={`remove-pack-${pack.id}`}>Remove</button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+
+            <!-- legacy favorites (optional) kept for association with skills -->
+            {#if favoritesLoading}
+              <select disabled>
+                <option>Loading favorites…</option>
+              </select>
+            {:else if favoritesError}
+              <select disabled>
+                <option>{favoritesError}</option>
+              </select>
+            {:else if favorites.length === 0}
+              <select disabled>
+                <option>No favorites yet</option>
+              </select>
+            {:else}
+              <div class="favorites-select">
+                <small>Associate an imported favorite (optional)</small>
+                <select bind:value={selectedFavoriteCode} data-testid="favorites-select">
+                  <option value="">Do not associate a favorite</option>
+                  {#each favorites as favorite}
+                    <option value={favorite.code}>{favorite.name}</option>
+                  {/each}
+                </select>
+              </div>
+            {/if}
+          </div>
         </label>
         <input type="hidden" data-testid="favorite-code-input" bind:value={selectedFavoriteCode} />
         {#if favoritesError}
@@ -381,6 +442,35 @@
     gap: 1rem;
     justify-content: space-between;
     align-items: flex-start;
+  }
+
+  .training-packs {
+    margin-top: 0.5rem;
+  }
+
+  .training-add {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .training-add input {
+    flex: 1 1 auto;
+  }
+
+  .training-list {
+    margin: 0.5rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .training-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 
   .skill-actions {
