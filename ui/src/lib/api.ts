@@ -16,12 +16,27 @@ export type MmrLogPayload = {
   source?: string | null;
 };
 
+export type TrainingPack = {
+  id: number;
+  name: string;
+  code: string;
+  orderIndex: number;
+};
+
+export type TrainingPackPayload = {
+  name: string;
+  code: string;
+};
+
 export type Skill = {
   id: number;
   name: string;
   category: string | null;
   tags: string | null;
   notes: string | null;
+  favoriteCode: string | null;
+  favoriteName: string | null;
+  trainingPacks: TrainingPack[];
 };
 
 export type SkillPayload = {
@@ -31,6 +46,8 @@ export type SkillPayload = {
   tags?: string | null;
   notes?: string | null;
   favoriteCode?: string | null;
+  favoriteName?: string | null;
+  trainingPacks?: TrainingPackPayload[];
 };
 
 export type SessionBlock = {

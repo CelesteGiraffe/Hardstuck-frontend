@@ -17,9 +17,19 @@
   let favoritesLoading = true;
   let favoritesError: string | null = null;
   let selectedFavoriteCode = '';
-  // training packs (simple, local reference list stored in localStorage)
-  let trainingPacks: Array<{ id: number; name: string }> = [];
+
+  const TRAINING_PACK_CODE_PATTERN = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+
+  type TrainingPackDraft = { key: string; name: string; code: string };
+
+  let trainingPackDrafts: TrainingPackDraft[] = [];
   let newPackName = '';
+  let newPackCode = '';
+  let trainingPackError: string | null = null;
+  let editTrainingPacks: TrainingPackDraft[] = [];
+  let editNewPackName = '';
+  let editNewPackCode = '';
+  let editTrainingPackError: string | null = null;
 
     onMount(async () => {
       favoritesLoading = true;
@@ -30,13 +40,6 @@
         favoritesError = error instanceof Error ? error.message : 'Unable to load favorites';
       } finally {
         favoritesLoading = false;
-      }
-      // load locally-stored training packs
-      try {
-        const raw = localStorage.getItem('trainingPacks');
-        trainingPacks = raw ? JSON.parse(raw) : [];
-      } catch {
-        trainingPacks = [];
       }
     });
 
@@ -120,13 +123,17 @@
         notes: notes.trim() || undefined,
         tags: normalizeTags(tags),
         favoriteCode: selectedFavoriteCode || undefined,
+        trainingPacks: trainingPackDrafts.map(({ name: packName, code }) => ({ name: packName, code })),
       });
       name = '';
       category = '';
       tags = '';
       notes = '';
       selectedFavoriteCode = '';
-      // clear new pack input but keep packs stored
+      trainingPackDrafts = [];
+      newPackName = '';
+      newPackCode = '';
+      trainingPackError = null;
       await skillsStore.refresh();
     } catch (err) {
       formError = err instanceof Error ? err.message : 'Failed to save skill';
@@ -135,25 +142,68 @@
     }
   };
 
-  function savePacks() {
-    try {
-      localStorage.setItem('trainingPacks', JSON.stringify(trainingPacks));
-    } catch {
-      // ignore localStorage errors
+  function createPackKey() {
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function addTrainingPackDraft() {
+    trainingPackError = null;
+    const name = newPackName.trim();
+    const code = newPackCode.trim().toUpperCase();
+
+    if (!name || !code) {
+      trainingPackError = 'Training pack name and code are required';
+      return;
     }
-  }
 
-  function addPack() {
-    const name = (newPackName || '').trim();
-    if (!name) return;
-    trainingPacks = [...trainingPacks, { id: Date.now(), name }];
+    if (!TRAINING_PACK_CODE_PATTERN.test(code)) {
+      trainingPackError = 'Code must match XXXX-XXXX-XXXX-XXXX using A-Z or 0-9';
+      return;
+    }
+
+    trainingPackDrafts = [...trainingPackDrafts, { key: createPackKey(), name, code }];
     newPackName = '';
-    savePacks();
+    newPackCode = '';
   }
 
-  function removePack(id: number) {
-    trainingPacks = trainingPacks.filter((p) => p.id !== id);
-    savePacks();
+  function removeTrainingPackDraft(key: string) {
+    trainingPackDrafts = trainingPackDrafts.filter((pack) => pack.key !== key);
+  }
+
+  function addEditTrainingPack() {
+    editTrainingPackError = null;
+    const name = editNewPackName.trim();
+    const code = editNewPackCode.trim().toUpperCase();
+
+    if (!name || !code) {
+      editTrainingPackError = 'Training pack name and code are required';
+      return;
+    }
+
+    if (!TRAINING_PACK_CODE_PATTERN.test(code)) {
+      editTrainingPackError = 'Code must match XXXX-XXXX-XXXX-XXXX using A-Z or 0-9';
+      return;
+    }
+
+    editTrainingPacks = [...editTrainingPacks, { key: createPackKey(), name, code }];
+    editNewPackName = '';
+    editNewPackCode = '';
+  }
+
+  function removeEditTrainingPack(key: string) {
+    editTrainingPacks = editTrainingPacks.filter((pack) => pack.key !== key);
+  }
+
+  async function copyTrainingPackCode(code: string) {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch (error) {
+      console.error('Unable to copy training pack code', error);
+    }
   }
 
   function beginEdit(skill: Skill) {
@@ -164,12 +214,24 @@
       tags: skill.tags ?? '',
       notes: skill.notes ?? '',
     };
+    editTrainingPacks = skill.trainingPacks.map((pack) => ({
+      key: `persist-${pack.id}`,
+      name: pack.name,
+      code: pack.code,
+    }));
+    editNewPackName = '';
+    editNewPackCode = '';
+    editTrainingPackError = null;
     editError = null;
   }
 
   function cancelEdit() {
     editingSkillId = null;
     editError = null;
+    editTrainingPacks = [];
+    editNewPackName = '';
+    editNewPackCode = '';
+    editTrainingPackError = null;
   }
 
   const handleUpdate = async (skill: Skill) => {
@@ -188,8 +250,13 @@
         category: editForm.category.trim() || undefined,
         notes: editForm.notes.trim() || undefined,
         tags: normalized ?? null,
+        trainingPacks: editTrainingPacks.map(({ name: packName, code }) => ({ name: packName, code })),
       });
       editingSkillId = null;
+      editTrainingPacks = [];
+      editNewPackName = '';
+      editNewPackCode = '';
+      editTrainingPackError = null;
       await skillsStore.refresh();
     } catch (err) {
       editError = err instanceof Error ? err.message : 'Failed to update skill';
@@ -249,21 +316,41 @@
             <div class="training-add">
               <input
                 aria-label="New training pack name"
-                placeholder="Add training pack (for reference only)"
+                placeholder="Training pack name"
                 bind:value={newPackName}
                 data-testid="new-pack-input"
               />
-              <button type="button" on:click={addPack} data-testid="add-pack-button">Add</button>
+              <input
+                aria-label="New training pack code"
+                placeholder="Code e.g. XXXX-XXXX-XXXX-XXXX"
+                bind:value={newPackCode}
+                data-testid="new-pack-code-input"
+              />
+              <button type="button" on:click={addTrainingPackDraft} data-testid="add-pack-button">Add</button>
             </div>
 
-            {#if trainingPacks.length === 0}
+            {#if trainingPackError}
+              <p class="form-error">{trainingPackError}</p>
+            {/if}
+
+            {#if trainingPackDrafts.length === 0}
               <div class="muted">No training packs added yet.</div>
             {:else}
               <ul class="training-list" data-testid="training-list">
-                {#each trainingPacks as pack}
+                {#each trainingPackDrafts as pack (pack.key)}
                   <li class="training-item">
-                    <span>{pack.name}</span>
-                    <button type="button" aria-label="Remove pack" on:click={() => removePack(pack.id)} data-testid={`remove-pack-${pack.id}`}>Remove</button>
+                    <div class="training-meta">
+                      <span class="training-name">{pack.name}</span>
+                      <code>{pack.code}</code>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${pack.name}`}
+                      on:click={() => removeTrainingPackDraft(pack.key)}
+                      data-testid={`remove-pack-${pack.key}`}
+                    >
+                      Remove
+                    </button>
                   </li>
                 {/each}
               </ul>
@@ -348,6 +435,30 @@
                     {#if skill.notes}
                       <p class="skill-notes">{skill.notes}</p>
                     {/if}
+                    {#if skill.trainingPacks.length}
+                      <div class="skill-training-packs">
+                        <strong>Training packs</strong>
+                        <ul class="training-list">
+                          {#each skill.trainingPacks as pack (pack.id)}
+                            <li class="training-item">
+                              <div class="training-meta">
+                                <span class="training-name">{pack.name}</span>
+                                <code>{pack.code}</code>
+                              </div>
+                              <button
+                                type="button"
+                                class="button-copy"
+                                title="Copy code"
+                                aria-label={`Copy ${pack.name} code`}
+                                on:click={() => copyTrainingPackCode(pack.code)}
+                              >
+                                Copy
+                              </button>
+                            </li>
+                          {/each}
+                        </ul>
+                      </div>
+                    {/if}
                   </div>
                   <div class="skill-actions">
                     <button
@@ -387,6 +498,39 @@
                       Notes
                       <textarea rows="2" bind:value={editForm.notes} placeholder="Optional notes"></textarea>
                     </label>
+                    <div class="training-packs training-packs-inline">
+                      <div class="training-add">
+                        <input
+                          aria-label="Existing training pack name"
+                          placeholder="Training pack name"
+                          bind:value={editNewPackName}
+                        />
+                        <input
+                          aria-label="Existing training pack code"
+                          placeholder="Code e.g. XXXX-XXXX-XXXX-XXXX"
+                          bind:value={editNewPackCode}
+                        />
+                        <button type="button" on:click={addEditTrainingPack}>Add</button>
+                      </div>
+                      {#if editTrainingPackError}
+                        <p class="form-error">{editTrainingPackError}</p>
+                      {/if}
+                      {#if editTrainingPacks.length === 0}
+                        <div class="muted">No training packs linked yet.</div>
+                      {:else}
+                        <ul class="training-list">
+                          {#each editTrainingPacks as pack (pack.key)}
+                            <li class="training-item">
+                              <div class="training-meta">
+                                <span class="training-name">{pack.name}</span>
+                                <code>{pack.code}</code>
+                              </div>
+                              <button type="button" on:click={() => removeEditTrainingPack(pack.key)}>Remove</button>
+                            </li>
+                          {/each}
+                        </ul>
+                      {/if}
+                    </div>
                     <div class="inline-actions">
                       <button type="submit" disabled={editSaving}>{editSaving ? 'Saving…' : 'Save changes'}</button>
                       <button type="button" class="button-muted" on:click={cancelEdit} disabled={editSaving}>Cancel</button>
@@ -452,10 +596,15 @@
     display: flex;
     gap: 0.5rem;
     align-items: center;
+    flex-wrap: wrap;
   }
 
   .training-add input {
-    flex: 1 1 auto;
+    flex: 1 1 45%;
+  }
+
+  .training-add button {
+    flex: 0 0 auto;
   }
 
   .training-list {
@@ -471,6 +620,41 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .training-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .training-name {
+    font-weight: 600;
+  }
+
+  .training-item code {
+    font-size: 0.85rem;
+    opacity: 0.85;
+  }
+
+  .button-copy {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .skill-training-packs {
+    margin-top: 0.75rem;
+  }
+
+  .skill-training-packs strong {
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .training-packs-inline {
+    margin-top: 0.75rem;
   }
 
   .skill-actions {

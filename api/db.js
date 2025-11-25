@@ -56,6 +56,18 @@ db.prepare(
 ).run();
 
 db.prepare(
+  `CREATE TABLE IF NOT EXISTS skill_training_packs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    skill_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    code TEXT NOT NULL,
+    order_index INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (skill_id) REFERENCES skills (id)
+  );`
+).run();
+
+db.prepare(
   `CREATE TABLE IF NOT EXISTS presets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL
@@ -207,12 +219,26 @@ const selectSkillsStmt = db.prepare(
 const selectSkillByIdStmt = db.prepare(
   'SELECT id, name, category, tags, notes, favorite_code AS favoriteCode, favorite_name AS favoriteName FROM skills WHERE id = ?;'
 );
+const selectTrainingPacksBySkillStmt = db.prepare(
+  'SELECT id, skill_id AS skillId, name, code, order_index AS orderIndex FROM skill_training_packs WHERE skill_id = ? ORDER BY order_index ASC, id ASC;'
+);
+const selectTrainingPacksForSkillIdsStmt = db.prepare(
+  `SELECT id, skill_id AS skillId, name, code, order_index AS orderIndex
+   FROM skill_training_packs
+   WHERE skill_id IN (SELECT value FROM json_each(?))
+   ORDER BY skill_id ASC, order_index ASC, id ASC;`
+);
 const insertSkillStmt = db.prepare(
   'INSERT INTO skills (name, category, tags, notes, favorite_code, favorite_name) VALUES (?, ?, ?, ?, ?, ?);'
 );
 const updateSkillStmt = db.prepare(
   'UPDATE skills SET name = ?, category = ?, tags = ?, notes = ?, favorite_code = ?, favorite_name = ? WHERE id = ?;'
 );
+const insertTrainingPackStmt = db.prepare(
+  'INSERT INTO skill_training_packs (skill_id, name, code, order_index) VALUES (?, ?, ?, ?);'
+);
+const deleteTrainingPacksBySkillStmt = db.prepare('DELETE FROM skill_training_packs WHERE skill_id = ?;');
+const clearTrainingPacksStmt = db.prepare('DELETE FROM skill_training_packs;');
 const selectSkillByNameStmt = db.prepare('SELECT id FROM skills WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1;');
 const selectPresetUsageStmt = db.prepare('SELECT COUNT(*) AS count FROM preset_blocks WHERE skill_id = ?;');
 const selectSessionBlocksUsageStmt = db.prepare(
@@ -560,11 +586,81 @@ function clearFavorites() {
   });
 }
 
-function getAllSkills() {
-  return selectSkillsStmt.all();
+function normalizeTrainingPackInput(packs) {
+  if (!Array.isArray(packs)) {
+    return [];
+  }
+
+  return packs
+    .map((pack) => {
+      const name = typeof pack?.name === 'string' ? pack.name.trim() : '';
+      const code = typeof pack?.code === 'string' ? pack.code.trim() : '';
+      if (!name || !code) {
+        return null;
+      }
+      return { name, code };
+    })
+    .filter(Boolean);
 }
 
-function upsertSkill({
+function saveTrainingPacksForSkill(skillId, packs) {
+  deleteTrainingPacksBySkillStmt.run(skillId);
+
+  const normalized = normalizeTrainingPackInput(packs);
+  normalized.forEach((pack, index) => {
+    insertTrainingPackStmt.run(skillId, pack.name, pack.code, index);
+  });
+}
+
+function getTrainingPacksForSkill(skillId) {
+  return selectTrainingPacksBySkillStmt.all(skillId).map(({ id, name, code, orderIndex }) => ({
+    id,
+    name,
+    code,
+    orderIndex,
+  }));
+}
+
+function attachTrainingPacksToSkill(skill) {
+  if (!skill) {
+    return null;
+  }
+
+  return {
+    ...skill,
+    trainingPacks: getTrainingPacksForSkill(skill.id),
+  };
+}
+
+function getAllSkills() {
+  const skills = selectSkillsStmt.all();
+  if (!skills.length) {
+    return [];
+  }
+
+  const skillIds = JSON.stringify(skills.map((skill) => skill.id));
+  const packRows = selectTrainingPacksForSkillIdsStmt.all(skillIds);
+  const packsBySkill = new Map();
+
+  for (const row of packRows) {
+    if (!packsBySkill.has(row.skillId)) {
+      packsBySkill.set(row.skillId, []);
+    }
+    packsBySkill.get(row.skillId).push({
+      id: row.id,
+      name: row.name,
+      code: row.code,
+      orderIndex: row.orderIndex,
+    });
+  }
+
+  return skills.map((skill) => ({
+    ...skill,
+    trainingPacks: packsBySkill.get(skill.id) ?? [],
+  }));
+}
+
+const upsertSkillTransaction = db.transaction(({
   id,
   name,
   category = null,
@@ -572,30 +668,38 @@ function upsertSkill({
   notes = null,
   favoriteCode = null,
   favoriteName = null,
-}) {
+  trainingPacks = [],
+}) => {
   if (!name) {
     throw new Error('name is required');
   }
 
   if (id) {
     updateSkillStmt.run(name, category, tags, notes, favoriteCode ?? null, favoriteName ?? null, id);
+    saveTrainingPacksForSkill(id, trainingPacks);
     const updated = selectSkillByIdStmt.get(id);
     emitDatabaseChange({
       type: 'skill',
       action: 'update',
       skillId: id,
     });
-    return updated;
+    return attachTrainingPacksToSkill(updated);
   }
 
   const info = insertSkillStmt.run(name, category, tags, notes, favoriteCode ?? null, favoriteName ?? null);
-  const created = selectSkillByIdStmt.get(info.lastInsertRowid);
+  const skillId = info.lastInsertRowid;
+  saveTrainingPacksForSkill(skillId, trainingPacks);
+  const created = selectSkillByIdStmt.get(skillId);
   emitDatabaseChange({
     type: 'skill',
     action: 'create',
-    skillId: info.lastInsertRowid,
+    skillId,
   });
-  return created;
+  return attachTrainingPacksToSkill(created);
+});
+
+function upsertSkill(payload) {
+  return upsertSkillTransaction(payload);
 }
 
 function getSkillReferenceCount(skillId) {
@@ -615,6 +719,7 @@ function deleteSkill(id) {
     throw new Error('Skill is referenced by existing presets or sessions');
   }
 
+  deleteTrainingPacksBySkillStmt.run(id);
   deleteSkillStmt.run(id);
   emitDatabaseChange({
     type: 'skill',
@@ -624,6 +729,7 @@ function deleteSkill(id) {
 }
 
 function clearSkills() {
+  clearTrainingPacksStmt.run();
   clearSkillsStmt.run();
   emitDatabaseChange({
     type: 'skill',

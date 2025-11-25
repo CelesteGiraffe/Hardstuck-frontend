@@ -498,14 +498,55 @@ app.get('/api/skills', (_, res) => {
   res.json(getAllSkills());
 });
 
+const TRAINING_PACK_CODE_PATTERN = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+
+function normalizeTrainingPacksPayload(packs) {
+  if (packs === undefined) {
+    return { normalized: [], errors: [] };
+  }
+
+  if (!Array.isArray(packs)) {
+    return { normalized: [], errors: ['trainingPacks must be an array'] };
+  }
+
+  const errors = [];
+  const normalized = [];
+
+  packs.forEach((pack, index) => {
+    const name = typeof pack?.name === 'string' ? pack.name.trim() : '';
+    const codeInput = typeof pack?.code === 'string' ? pack.code.trim().toUpperCase() : '';
+
+    if (!name) {
+      errors.push(`trainingPacks[${index}].name is required`);
+    }
+
+    if (!codeInput) {
+      errors.push(`trainingPacks[${index}].code is required`);
+    } else if (!TRAINING_PACK_CODE_PATTERN.test(codeInput)) {
+      errors.push(`trainingPacks[${index}].code must match XXXX-XXXX-XXXX-XXXX using A-Z or 0-9`);
+    }
+
+    if (name && codeInput && TRAINING_PACK_CODE_PATTERN.test(codeInput)) {
+      normalized.push({ name, code: codeInput });
+    }
+  });
+
+  return { normalized, errors };
+}
+
 app.post('/api/skills', (req, res) => {
-  const { id, name, category, tags, notes, favoriteCode, favoriteName } = req.body;
+  const { id, name, category, tags, notes, favoriteCode, favoriteName, trainingPacks } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: 'name is required' });
   }
 
-  const skill = upsertSkill({ id, name, category, tags, notes, favoriteCode, favoriteName });
+  const { normalized: normalizedTrainingPacks, errors } = normalizeTrainingPacksPayload(trainingPacks);
+  if (errors.length > 0) {
+    return res.status(400).json({ error: errors.join('. ') });
+  }
+
+  const skill = upsertSkill({ id, name, category, tags, notes, favoriteCode, favoriteName, trainingPacks: normalizedTrainingPacks });
   const userId = (req.header('x-user-id') || '').trim();
   ensureFavoriteForUser({ userId, name: favoriteName, code: favoriteCode });
   res.status(201).json(skill);

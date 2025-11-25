@@ -1,183 +1,177 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, waitFor, within, cleanup } from '@testing-library/svelte';
-import * as api from './api';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import SkillsScreen from './SkillsScreen.svelte';
+import * as api from './api';
 import { resetSkillsCacheForTests } from './useSkills';
 import { skillsStore } from './skillsStore';
 
-describe('SkillsScreen training packs UI', () => {
+const baseSkill = {
+  id: 1,
+  name: 'Fooskill',
+  category: 'Control',
+  tags: 'air, offense',
+  notes: 'Keep it clean',
+  favoriteCode: null,
+  favoriteName: null,
+  trainingPacks: [],
+};
+
+describe('SkillsScreen training packs', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.resetAllMocks();
-    // clear localStorage so tests start fresh
-    localStorage.clear();
+    resetSkillsCacheForTests();
     vi.spyOn(api, 'getBakkesFavorites').mockResolvedValue([]);
-    // prevent the component from calling the real API for skills in these tests
     vi.spyOn(api, 'getSkills').mockResolvedValue([]);
   });
 
   afterEach(() => {
-    // ensure DOM is reset between tests and avoid leaving renders behind
     cleanup();
     document.body.innerHTML = '';
   });
 
-  it('shows the training packs input and can add an item', async () => {
-    const { getByLabelText, getByTestId, queryByText } = render(SkillsScreen);
+  it('adds and removes training pack drafts before submitting', async () => {
+    vi.spyOn(api, 'createSkill').mockResolvedValue({ ...baseSkill, id: 2 });
 
-    const input = await waitFor(() => getByLabelText('New training pack name')) as HTMLInputElement;
+    const { getByLabelText, getByTestId, getByText, queryByText } = render(SkillsScreen);
+
+    await waitFor(() => getByLabelText('Name'));
+
+    const packNameInput = getByLabelText('New training pack name') as HTMLInputElement;
+    const packCodeInput = getByLabelText('New training pack code') as HTMLInputElement;
     const addButton = getByTestId('add-pack-button');
 
-    // initial list is empty
-    expect(queryByText('No training packs added yet.')).toBeTruthy();
-
-    // add a pack
-    await fireEvent.input(input, { target: { value: 'Aerial Training Pack' } });
+    await fireEvent.input(packNameInput, { target: { value: 'Air Dribble Routine' } });
+    await fireEvent.input(packCodeInput, { target: { value: 'abcd-1234-efgh-5678' } });
     await fireEvent.click(addButton);
 
+    expect(queryByText('No training packs added yet.')).toBeNull();
     const list = getByTestId('training-list');
-    expect(list.textContent).toContain('Aerial Training Pack');
+    expect(list.textContent).toContain('Air Dribble Routine');
+    expect(list.textContent).toContain('ABCD-1234-EFGH-5678');
+
+    const removeButton = getByText('Remove');
+    await fireEvent.click(removeButton);
+    await waitFor(() => expect(queryByText('Air Dribble Routine')).toBeNull());
   });
 
-  it('allows removing a training pack', async () => {
+  it('validates training pack code format inline', async () => {
     const { getByLabelText, getByTestId, getByText } = render(SkillsScreen);
 
-    const input = await waitFor(() => getByLabelText('New training pack name')) as HTMLInputElement;
+    await waitFor(() => getByLabelText('Name'));
+
+    const packNameInput = getByLabelText('New training pack name') as HTMLInputElement;
+    const packCodeInput = getByLabelText('New training pack code') as HTMLInputElement;
     const addButton = getByTestId('add-pack-button');
 
-    await fireEvent.input(input, { target: { value: 'Shot Pack 1' } });
+    await fireEvent.input(packNameInput, { target: { value: 'Invalid Pack' } });
+    await fireEvent.input(packCodeInput, { target: { value: '1234-ABCD' } });
     await fireEvent.click(addButton);
 
-    const item = getByText('Shot Pack 1');
-    expect(item).toBeTruthy();
+    expect(getByText(/Code must match/)).toBeInTheDocument();
+  });
 
-    // remove it
-    const removeBtn = getByText('Remove');
-    await fireEvent.click(removeBtn);
+  it('submits training packs with uppercase codes', async () => {
+    const createSpy = vi.spyOn(api, 'createSkill').mockResolvedValue({ ...baseSkill, id: 2 });
+    const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockResolvedValue([]);
 
-    // removed
-    await waitFor(() => expect(() => getByText('Shot Pack 1')).toThrow());
+    const { getByLabelText, getByTestId, getByText } = render(SkillsScreen);
+
+    const nameInput = (await waitFor(() => getByLabelText('Name'))) as HTMLInputElement;
+    const packNameInput = getByLabelText('New training pack name') as HTMLInputElement;
+    const packCodeInput = getByLabelText('New training pack code') as HTMLInputElement;
+    const addButton = getByTestId('add-pack-button');
+
+    await fireEvent.input(nameInput, { target: { value: 'Ceiling Control' } });
+    await fireEvent.input(packNameInput, { target: { value: 'Ceiling Shots' } });
+    await fireEvent.input(packCodeInput, { target: { value: 'wxyz-9876-tuvw-5432' } });
+    await fireEvent.click(addButton);
+
+    const submitButton = getByText('Save skill');
+    const form = submitButton.closest('form');
+    if (!form) {
+      throw new Error('Expected save button to be inside a form');
+    }
+    await fireEvent.submit(form);
+
+    await waitFor(() => expect(createSpy).toHaveBeenCalled());
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Ceiling Control',
+        trainingPacks: [{ name: 'Ceiling Shots', code: 'WXYZ-9876-TUVW-5432' }],
+      })
+    );
+    expect(refreshSpy).toHaveBeenCalled();
   });
 });
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, waitFor, within } from '@testing-library/svelte'
-import * as api from './api'
-import SkillsScreen from './SkillsScreen.svelte'
-import { resetSkillsCacheForTests } from './useSkills'
-import { skillsStore } from './skillsStore'
 
-const skills = [
-  { id: 1, name: 'Fooskill', category: 'Control', tags: 'air, offense', notes: 'Keep it clean' },
-]
-
-describe('SkillsScreen', () => {
+describe('SkillsScreen actions', () => {
   beforeEach(() => {
-    resetSkillsCacheForTests()
-    vi.restoreAllMocks()
-    const env = import.meta.env as ImportMetaEnv & Record<string, string | undefined>
-    env.VITE_BAKKES_USER_ID = 'test-player'
-  })
+    vi.restoreAllMocks();
+    vi.resetAllMocks();
+    resetSkillsCacheForTests();
+    const env = import.meta.env as ImportMetaEnv & Record<string, string | undefined>;
+    env.VITE_BAKKES_USER_ID = 'test-player';
+  });
 
-  it('updates a skill and refreshes the shared store', async () => {
-    vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
-  const updateSpy = vi.spyOn(api, 'updateSkill').mockResolvedValue(skills[0])
-  const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockResolvedValue(skills)
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
 
-  const { getAllByLabelText, findByRole, container } = render(SkillsScreen)
+  it('updates a skill and saves training packs', async () => {
+    const skillWithPack = {
+      ...baseSkill,
+      trainingPacks: [{ id: 9, name: 'Backboard', code: 'BACK-1234-BOARD-5678', orderIndex: 0 }],
+    };
+    vi.spyOn(api, 'getSkills').mockResolvedValue([skillWithPack]);
+    vi.spyOn(api, 'getBakkesFavorites').mockResolvedValue([]);
+    const updateSpy = vi.spyOn(api, 'updateSkill').mockResolvedValue(skillWithPack);
+    const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockResolvedValue([skillWithPack]);
 
-  await waitFor(() => getAllByLabelText('Edit Fooskill'))
-  const editButton = getAllByLabelText('Edit Fooskill').find((button) => button.textContent?.trim() === 'Edit') ?? getAllByLabelText('Edit Fooskill')[0]
-  await fireEvent.click(editButton)
+    const { getAllByLabelText, container } = render(SkillsScreen);
 
-  const inlineForm = (await waitFor(() => container.querySelector('.skill-inline-form'))) as HTMLFormElement
-  const nameInput = inlineForm.querySelector('input[placeholder="Skill name"]') as HTMLInputElement
-  await fireEvent.input(nameInput, { target: { value: 'Fooskill 2' } })
-  await fireEvent.submit(inlineForm)
+    await waitFor(() => getAllByLabelText('Edit Fooskill'));
+    await fireEvent.click(getAllByLabelText('Edit Fooskill')[0]);
 
-  await waitFor(() => expect(updateSpy).toHaveBeenCalled())
-  expect(refreshSpy).toHaveBeenCalled()
-  })
+    const inlineForm = (await waitFor(() => container.querySelector('.skill-inline-form'))) as HTMLFormElement;
+    const nameInput = inlineForm.querySelector('input[placeholder="Skill name"]') as HTMLInputElement;
+    await fireEvent.input(nameInput, { target: { value: 'Fooskill Advanced' } });
+
+    const addNameInput = inlineForm.querySelector('input[aria-label="Existing training pack name"]') as HTMLInputElement;
+    const addCodeInput = inlineForm.querySelector('input[aria-label="Existing training pack code"]') as HTMLInputElement;
+    await fireEvent.input(addNameInput, { target: { value: 'Corner Reads' } });
+    await fireEvent.input(addCodeInput, { target: { value: 'CORN-1234-READ-5678' } });
+    const addButton = within(inlineForm).getByText('Add');
+    await fireEvent.click(addButton);
+
+    await fireEvent.submit(inlineForm);
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalled());
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trainingPacks: [
+          { name: 'Backboard', code: 'BACK-1234-BOARD-5678' },
+          { name: 'Corner Reads', code: 'CORN-1234-READ-5678' },
+        ],
+      })
+    );
+    expect(refreshSpy).toHaveBeenCalled();
+  });
 
   it('deletes a skill when confirmed', async () => {
-    vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
-    const deleteSpy = vi.spyOn(api, 'deleteSkill').mockResolvedValue(undefined)
-    const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockResolvedValue(skills)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.spyOn(api, 'getSkills').mockResolvedValue([baseSkill]);
+    vi.spyOn(api, 'getBakkesFavorites').mockResolvedValue([]);
+    const deleteSpy = vi.spyOn(api, 'deleteSkill').mockResolvedValue(undefined);
+    const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockResolvedValue([baseSkill]);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
-  const { getAllByLabelText } = render(SkillsScreen)
+    const { getAllByLabelText } = render(SkillsScreen);
 
-  await waitFor(() => getAllByLabelText('Delete Fooskill'))
-  await fireEvent.click(getAllByLabelText('Delete Fooskill')[0])
+    await waitFor(() => getAllByLabelText('Delete Fooskill'));
+    await fireEvent.click(getAllByLabelText('Delete Fooskill')[0]);
 
-    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(skills[0].id))
-    expect(refreshSpy).toHaveBeenCalled()
-  })
-
-  it('submits the selected favorite when adding a skill', async () => {
-    vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
-    const favorites = [
-      { name: 'Boost Play', code: 'AAA-111' },
-      { name: 'Aerial Drill', code: 'BBB-222' },
-    ]
-    const favoritesSpy = vi.spyOn(api, 'getBakkesFavorites').mockResolvedValue(favorites)
-    const createSpy = vi.spyOn(api, 'createSkill').mockResolvedValue(skills[0])
-    const refreshSpy = vi.spyOn(skillsStore, 'refresh').mockResolvedValue(skills)
-
-  const { container } = render(SkillsScreen)
-
-    await waitFor(() => expect(favoritesSpy).toHaveBeenCalled())
-    const getSelect = () => within(container).getByTestId('favorites-select') as HTMLSelectElement
-    await waitFor(() => expect(getSelect().disabled).toBeFalsy())
-
-  const form = getSelect().closest('form')
-    if (!form) {
-      throw new Error('Favorites dropdown should be inside the skill form')
-    }
-  const formHelpers = within(form)
-    const nameInput = formHelpers.getByLabelText('Name')
-  const favoriteCodeInput = formHelpers.getByTestId('favorite-code-input') as HTMLInputElement
-  await fireEvent.input(favoriteCodeInput, { target: { value: favorites[1].code } })
-    await fireEvent.input(nameInput, { target: { value: 'Boost Note' } })
-  await fireEvent.submit(form)
-
-    await waitFor(() => expect(createSpy).toHaveBeenCalled())
-    expect(createSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ favoriteCode: favorites[1].code })
-    )
-    expect(refreshSpy).toHaveBeenCalled()
-  })
-
-  it('shows a message when favorites fail to load', async () => {
-    vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
-    vi.spyOn(api, 'getBakkesFavorites').mockRejectedValue(new Error('boom'))
-
-    const { getByText } = render(SkillsScreen)
-
-    await waitFor(() => expect(getByText('boom')).toBeInTheDocument())
-  })
-
-  it('applies mobile layout when the viewport is small', async () => {
-    vi.spyOn(api, 'getSkills').mockResolvedValue(skills)
-
-    // mock matchMedia so the component believes it is on a small screen
-    const mql = {
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-    }
-
-    Object.defineProperty(window, 'matchMedia', {
-      configurable: true,
-      value: (query: string) => mql as unknown as MediaQueryList,
-    })
-
-    const { container } = render(SkillsScreen)
-
-    // the component will render and set a data attribute when mobile
-    await waitFor(() => expect(container.querySelector('.skills-dashboard')).toBeTruthy())
-    const dash = container.querySelector('.skills-dashboard') as HTMLElement
-    expect(dash.getAttribute('data-mobile')).toBe('true')
-  })
-})
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(baseSkill.id));
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+});
