@@ -1,3 +1,4 @@
+import { getBakkesUserId } from './constants';
 export type MmrRecord = {
   id: number;
   timestamp: string;
@@ -15,12 +16,27 @@ export type MmrLogPayload = {
   source?: string | null;
 };
 
+export type TrainingPack = {
+  id: number;
+  name: string;
+  code: string;
+  orderIndex: number;
+};
+
+export type TrainingPackPayload = {
+  name: string;
+  code: string;
+};
+
 export type Skill = {
   id: number;
   name: string;
   category: string | null;
   tags: string | null;
   notes: string | null;
+  favoriteCode: string | null;
+  favoriteName: string | null;
+  trainingPacks: TrainingPack[];
 };
 
 export type SkillPayload = {
@@ -30,6 +46,8 @@ export type SkillPayload = {
   tags?: string | null;
   notes?: string | null;
   favoriteCode?: string | null;
+  favoriteName?: string | null;
+  trainingPacks?: TrainingPackPayload[];
 };
 
 export type SessionBlock = {
@@ -137,6 +155,7 @@ export type PresetBlock = {
 export type Preset = {
   id: number;
   name: string;
+  orderIndex: number;
   blocks: PresetBlock[];
 };
 
@@ -211,6 +230,49 @@ export async function getBakkesmodHistory(filters: BakkesmodHistoryFilters = {})
   return (await response.json()) as BakkesmodHistoryPayload;
 }
 
+export type HistoryExportFilters = {
+  playlist?: string;
+  from?: string;
+  to?: string;
+};
+
+export async function exportHistoryCsv(filters: HistoryExportFilters = {}): Promise<string> {
+  const params = new URLSearchParams();
+  if (filters.playlist) params.set('playlist', filters.playlist);
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+  const path = `/api/history/export${params.toString() ? `?${params}` : ''}`;
+  const response = await fetch(buildUrl(path));
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to export history CSV');
+  }
+
+  return await response.text();
+}
+
+export type HistoryImportResult = {
+  imported: number;
+  skipped: number;
+  errors: string[];
+};
+
+export async function importHistoryCsv(csv: string): Promise<HistoryImportResult> {
+  const response = await fetch(buildUrl('/api/history/import'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ csv }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to import history CSV');
+  }
+
+  return (await response.json()) as HistoryImportResult;
+}
+
 export async function createMmrLog(payload: MmrLogPayload): Promise<void> {
   const response = await fetch(buildUrl('/api/mmr-log'), {
     method: 'POST',
@@ -269,6 +331,17 @@ export async function deleteMmrRecords(filters: { playlist?: string; from?: stri
   return data ?? undefined;
 }
 
+export async function deleteAllMmrRecords(): Promise<{ deleted: number }> {
+  const response = await fetch(buildUrl('/api/mmr/clear'), { method: 'DELETE' });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to delete all MMR records');
+  }
+
+  return (await response.json()) as { deleted: number };
+}
+
 export async function getSkills(): Promise<Skill[]> {
   const response = await fetch(buildUrl('/api/skills'));
   if (!response.ok) {
@@ -285,6 +358,44 @@ export async function getPresets(): Promise<Preset[]> {
   }
 
   return (await response.json()) as Preset[];
+}
+
+export async function getPresetShare(presetId: number): Promise<string> {
+  const response = await fetch(buildUrl(`/api/presets/${presetId}/share`));
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to generate share text');
+  }
+
+  const payload = (await response.json()) as { share: string };
+  if (!payload?.share) {
+    throw new Error('Invalid share data');
+  }
+
+  return payload.share;
+}
+
+export async function importPresetShare(share: string, userId: string): Promise<Preset> {
+  const response = await fetch(buildUrl('/api/presets/share/import'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-User-Id': userId,
+    },
+    body: JSON.stringify({ share }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to import shared preset');
+  }
+
+  const payload = (await response.json()) as { preset: Preset };
+  if (!payload?.preset) {
+    throw new Error('Invalid response from share import');
+  }
+
+  return payload.preset;
 }
 
 export async function savePreset(payload: PresetPayload): Promise<Preset> {
@@ -310,6 +421,21 @@ export async function deletePreset(id: number): Promise<void> {
   if (!response.ok) {
     const error = await response.json().catch(() => null);
     throw new Error(error?.error ?? 'Unable to delete preset');
+  }
+}
+
+export async function updatePresetOrder(presetIds: number[]): Promise<void> {
+  const response = await fetch(buildUrl('/api/presets/order'), {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ presetIds }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to update preset order');
   }
 }
 
@@ -356,6 +482,17 @@ export async function getSessions(filters: { start?: string; end?: string } = {}
   }
 
   return (await response.json()) as Session[];
+}
+
+export async function deleteSession(id: number): Promise<void> {
+  const response = await fetch(buildUrl(`/api/sessions/${id}`), {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error ?? 'Unable to delete session');
+  }
 }
 
 export async function getSkillSummary({ from, to }: { from?: string; to?: string } = {}): Promise<SkillSummary[]> {

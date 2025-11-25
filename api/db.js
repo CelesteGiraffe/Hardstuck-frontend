@@ -1,6 +1,7 @@
 const path = require('path');
 const { EventEmitter } = require('events');
 const Database = require('better-sqlite3');
+const zlib = require('zlib');
 const { normalizePlaylist } = require('./playlist-normalize');
 
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'rocket_trainer.db');
@@ -8,6 +9,9 @@ const db = new Database(dbPath);
 
 const changeEmitter = new EventEmitter();
 changeEmitter.setMaxListeners(0);
+
+const PRESET_SHARE_PREFIX = 'RLTRAINER:PRESET:V1:';
+const PRESET_SHARE_VERSION = 1;
 
 function emitDatabaseChange(event) {
   changeEmitter.emit('change', { ...event });
@@ -48,6 +52,18 @@ db.prepare(
     category TEXT,
     tags TEXT,
     notes TEXT
+  );`
+).run();
+
+db.prepare(
+  `CREATE TABLE IF NOT EXISTS skill_training_packs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    skill_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    code TEXT NOT NULL,
+    order_index INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (skill_id) REFERENCES skills (id)
   );`
 ).run();
 
@@ -136,11 +152,14 @@ function ensureColumn(tableName, columnDefinition) {
 
 ensureColumn('sessions', 'actual_duration INTEGER DEFAULT 0');
 ensureColumn('sessions', 'skill_ids TEXT');
+ensureColumn('skills', 'favorite_code TEXT');
+ensureColumn('skills', 'favorite_name TEXT');
+ensureColumn('presets', 'order_index INTEGER DEFAULT 0');
 
-const selectPresetsStmt = db.prepare('SELECT id, name FROM presets ORDER BY id ASC;');
-const selectPresetByIdStmt = db.prepare('SELECT id, name FROM presets WHERE id = ?;');
-const insertPresetStmt = db.prepare('INSERT INTO presets (name) VALUES (?);');
-const updatePresetStmt = db.prepare('UPDATE presets SET name = ? WHERE id = ?;');
+const selectPresetsStmt = db.prepare('SELECT id, name, order_index AS orderIndex FROM presets ORDER BY order_index ASC, id ASC;');
+const selectPresetByIdStmt = db.prepare('SELECT id, name, order_index AS orderIndex FROM presets WHERE id = ?;');
+const insertPresetStmt = db.prepare('INSERT INTO presets (name, order_index) VALUES (?, ?);');
+const updatePresetStmt = db.prepare('UPDATE presets SET name = ?, order_index = ? WHERE id = ?;');
 const deletePresetBlocksStmt = db.prepare('DELETE FROM preset_blocks WHERE preset_id = ?;');
 const insertBlockStmt = db.prepare(
   'INSERT INTO preset_blocks (preset_id, order_index, skill_id, type, duration_seconds, notes) VALUES (?, ?, ?, ?, ?, ?);'
@@ -160,8 +179,13 @@ const insertSessionBlockStmt = db.prepare(
 const selectSessionBlocksStmt = db.prepare(
   'SELECT id, session_id AS sessionId, block_type AS type, skill_ids AS skillIdsJson, planned_duration AS plannedDuration, actual_duration AS actualDuration, notes FROM session_blocks WHERE session_id = ? ORDER BY id ASC;'
 );
+const deleteSessionBlocksBySessionStmt = db.prepare('DELETE FROM session_blocks WHERE session_id = ?;');
+const deleteSessionStmt = db.prepare('DELETE FROM sessions WHERE id = ?;');
 const clearSessionBlocksStmt = db.prepare('DELETE FROM session_blocks;');
 const clearSessionsStmt = db.prepare('DELETE FROM sessions;');
+const selectSessionByIdStmt = db.prepare(
+  'SELECT id, started_time AS startedTime, finished_time AS finishedTime, source, preset_id AS presetId, notes, actual_duration AS actualDuration, skill_ids AS skillIdsJson FROM sessions WHERE id = ?;'
+);
 
 const selectProfileStmt = db.prepare(
   'SELECT id, name, avatar_url AS avatarUrl, timezone, default_weekly_target_minutes AS defaultWeeklyTargetMinutes FROM profile_settings LIMIT 1;'
@@ -190,17 +214,32 @@ const deleteTrainingGoalStmt = db.prepare('DELETE FROM training_goals WHERE id =
 const clearTrainingGoalsStmt = db.prepare('DELETE FROM training_goals;');
 
 const selectSkillsStmt = db.prepare(
-  'SELECT id, name, category, tags, notes FROM skills ORDER BY id ASC;'
+  'SELECT id, name, category, tags, notes, favorite_code AS favoriteCode, favorite_name AS favoriteName FROM skills ORDER BY id ASC;'
 );
 const selectSkillByIdStmt = db.prepare(
-  'SELECT id, name, category, tags, notes FROM skills WHERE id = ?;'
+  'SELECT id, name, category, tags, notes, favorite_code AS favoriteCode, favorite_name AS favoriteName FROM skills WHERE id = ?;'
+);
+const selectTrainingPacksBySkillStmt = db.prepare(
+  'SELECT id, skill_id AS skillId, name, code, order_index AS orderIndex FROM skill_training_packs WHERE skill_id = ? ORDER BY order_index ASC, id ASC;'
+);
+const selectTrainingPacksForSkillIdsStmt = db.prepare(
+  `SELECT id, skill_id AS skillId, name, code, order_index AS orderIndex
+   FROM skill_training_packs
+   WHERE skill_id IN (SELECT value FROM json_each(?))
+   ORDER BY skill_id ASC, order_index ASC, id ASC;`
 );
 const insertSkillStmt = db.prepare(
-  'INSERT INTO skills (name, category, tags, notes) VALUES (?, ?, ?, ?);'
+  'INSERT INTO skills (name, category, tags, notes, favorite_code, favorite_name) VALUES (?, ?, ?, ?, ?, ?);'
 );
 const updateSkillStmt = db.prepare(
-  'UPDATE skills SET name = ?, category = ?, tags = ?, notes = ? WHERE id = ?;'
+  'UPDATE skills SET name = ?, category = ?, tags = ?, notes = ?, favorite_code = ?, favorite_name = ? WHERE id = ?;'
 );
+const insertTrainingPackStmt = db.prepare(
+  'INSERT INTO skill_training_packs (skill_id, name, code, order_index) VALUES (?, ?, ?, ?);'
+);
+const deleteTrainingPacksBySkillStmt = db.prepare('DELETE FROM skill_training_packs WHERE skill_id = ?;');
+const clearTrainingPacksStmt = db.prepare('DELETE FROM skill_training_packs;');
+const selectSkillByNameStmt = db.prepare('SELECT id FROM skills WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1;');
 const selectPresetUsageStmt = db.prepare('SELECT COUNT(*) AS count FROM preset_blocks WHERE skill_id = ?;');
 const selectSessionBlocksUsageStmt = db.prepare(
   `SELECT COUNT(*) AS count
@@ -242,6 +281,9 @@ const updateMmrStmt = db.prepare(
 const deleteMmrStmt = db.prepare('DELETE FROM mmr_logs WHERE id = ?;');
 const clearStmt = db.prepare('DELETE FROM mmr_logs;');
 const selectFavoritesByUserStmt = db.prepare('SELECT name, code FROM bakkes_favorites WHERE user_id = ? ORDER BY id ASC;');
+const selectFavoriteByUserAndCodeStmt = db.prepare(
+  'SELECT id FROM bakkes_favorites WHERE user_id = ? AND code = ? LIMIT 1;'
+);
 const insertFavoriteStmt = db.prepare('INSERT INTO bakkes_favorites (user_id, name, code) VALUES (?, ?, ?);');
 const clearFavoritesStmt = db.prepare('DELETE FROM bakkes_favorites;');
 
@@ -250,12 +292,12 @@ function saveMmrLog({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakke
   // Skip storing duplicate MMR entries per playlist when nothing has changed.
   const lastForPlaylist = selectLastMmrForPlaylistStmt.get(playlist);
   if (lastForPlaylist && Number(lastForPlaylist.mmr) === Number(mmr)) {
-    return;
+    return false;
   }
   if (resolvedSource === 'bakkes_snapshot' && playlist === 'Casual') {
     const { count } = selectSnapshotCasualStmt.get(playlist, timestamp, resolvedSource);
     if (count > 0) {
-      return;
+      return false;
     }
   }
 
@@ -267,6 +309,7 @@ function saveMmrLog({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakke
     playlist,
     source: resolvedSource,
   });
+  return true;
 }
 
 function insertRawMmrRecord({ timestamp, playlist, mmr, gamesPlayedDiff, source = 'bakkes' }) {
@@ -382,11 +425,13 @@ function getMmrLogs({ playlist, from, to } = {}) {
 
 function clearMmrLogs() {
   const info = clearStmt.run();
+  const deleted = info?.changes ?? 0;
   emitDatabaseChange({
     type: 'mmr-log',
     action: 'clear',
-    deleted: info?.changes ?? null,
+    deleted,
   });
+  return deleted;
 }
 
 function deleteMmrLog(id) {
@@ -514,6 +559,25 @@ function addFavoriteForUser({ userId, name, code }) {
   });
 }
 
+function ensureFavoriteForUser({ userId, name, code }) {
+  if (!userId || !name || !code) {
+    return;
+  }
+
+  const trimmedName = name.trim();
+  const trimmedCode = code.trim();
+  if (!trimmedName || !trimmedCode) {
+    return;
+  }
+
+  const existing = selectFavoriteByUserAndCodeStmt.get(userId, trimmedCode);
+  if (existing) {
+    return;
+  }
+
+  addFavoriteForUser({ userId, name: trimmedName, code: trimmedCode });
+}
+
 function clearFavorites() {
   clearFavoritesStmt.run();
   emitDatabaseChange({
@@ -522,34 +586,120 @@ function clearFavorites() {
   });
 }
 
-function getAllSkills() {
-  return selectSkillsStmt.all();
+function normalizeTrainingPackInput(packs) {
+  if (!Array.isArray(packs)) {
+    return [];
+  }
+
+  return packs
+    .map((pack) => {
+      const name = typeof pack?.name === 'string' ? pack.name.trim() : '';
+      const code = typeof pack?.code === 'string' ? pack.code.trim() : '';
+      if (!name || !code) {
+        return null;
+      }
+      return { name, code };
+    })
+    .filter(Boolean);
 }
 
-function upsertSkill({ id, name, category = null, tags = null, notes = null }) {
+function saveTrainingPacksForSkill(skillId, packs) {
+  deleteTrainingPacksBySkillStmt.run(skillId);
+
+  const normalized = normalizeTrainingPackInput(packs);
+  normalized.forEach((pack, index) => {
+    insertTrainingPackStmt.run(skillId, pack.name, pack.code, index);
+  });
+}
+
+function getTrainingPacksForSkill(skillId) {
+  return selectTrainingPacksBySkillStmt.all(skillId).map(({ id, name, code, orderIndex }) => ({
+    id,
+    name,
+    code,
+    orderIndex,
+  }));
+}
+
+function attachTrainingPacksToSkill(skill) {
+  if (!skill) {
+    return null;
+  }
+
+  return {
+    ...skill,
+    trainingPacks: getTrainingPacksForSkill(skill.id),
+  };
+}
+
+function getAllSkills() {
+  const skills = selectSkillsStmt.all();
+  if (!skills.length) {
+    return [];
+  }
+
+  const skillIds = JSON.stringify(skills.map((skill) => skill.id));
+  const packRows = selectTrainingPacksForSkillIdsStmt.all(skillIds);
+  const packsBySkill = new Map();
+
+  for (const row of packRows) {
+    if (!packsBySkill.has(row.skillId)) {
+      packsBySkill.set(row.skillId, []);
+    }
+    packsBySkill.get(row.skillId).push({
+      id: row.id,
+      name: row.name,
+      code: row.code,
+      orderIndex: row.orderIndex,
+    });
+  }
+
+  return skills.map((skill) => ({
+    ...skill,
+    trainingPacks: packsBySkill.get(skill.id) ?? [],
+  }));
+}
+
+const upsertSkillTransaction = db.transaction(({
+  id,
+  name,
+  category = null,
+  tags = null,
+  notes = null,
+  favoriteCode = null,
+  favoriteName = null,
+  trainingPacks = [],
+}) => {
   if (!name) {
     throw new Error('name is required');
   }
 
   if (id) {
-    updateSkillStmt.run(name, category, tags, notes, id);
+    updateSkillStmt.run(name, category, tags, notes, favoriteCode ?? null, favoriteName ?? null, id);
+    saveTrainingPacksForSkill(id, trainingPacks);
     const updated = selectSkillByIdStmt.get(id);
     emitDatabaseChange({
       type: 'skill',
       action: 'update',
       skillId: id,
     });
-    return updated;
+    return attachTrainingPacksToSkill(updated);
   }
 
-  const info = insertSkillStmt.run(name, category, tags, notes);
-  const created = selectSkillByIdStmt.get(info.lastInsertRowid);
+  const info = insertSkillStmt.run(name, category, tags, notes, favoriteCode ?? null, favoriteName ?? null);
+  const skillId = info.lastInsertRowid;
+  saveTrainingPacksForSkill(skillId, trainingPacks);
+  const created = selectSkillByIdStmt.get(skillId);
   emitDatabaseChange({
     type: 'skill',
     action: 'create',
-    skillId: info.lastInsertRowid,
+    skillId,
   });
-  return created;
+  return attachTrainingPacksToSkill(created);
+});
+
+function upsertSkill(payload) {
+  return upsertSkillTransaction(payload);
 }
 
 function getSkillReferenceCount(skillId) {
@@ -569,6 +719,7 @@ function deleteSkill(id) {
     throw new Error('Skill is referenced by existing presets or sessions');
   }
 
+  deleteTrainingPacksBySkillStmt.run(id);
   deleteSkillStmt.run(id);
   emitDatabaseChange({
     type: 'skill',
@@ -578,6 +729,7 @@ function deleteSkill(id) {
 }
 
 function clearSkills() {
+  clearTrainingPacksStmt.run();
   clearSkillsStmt.run();
   emitDatabaseChange({
     type: 'skill',
@@ -599,9 +751,12 @@ const savePresetTransaction = db.transaction(({ id, name, blocks }) => {
   let presetId = id;
 
   if (presetId) {
-    updatePresetStmt.run(name, presetId);
+    const existing = selectPresetByIdStmt.get(presetId);
+    if (!existing) throw new Error('preset not found');
+    updatePresetStmt.run(name, existing.orderIndex, presetId);
   } else {
-    const info = insertPresetStmt.run(name);
+    const maxOrder = db.prepare('SELECT MAX(order_index) AS maxOrder FROM presets;').get().maxOrder || 0;
+    const info = insertPresetStmt.run(name, maxOrder + 1);
     presetId = info.lastInsertRowid;
   }
 
@@ -618,7 +773,7 @@ const savePresetTransaction = db.transaction(({ id, name, blocks }) => {
     );
   }
 
-  return buildPresetResponse({ id: presetId, name });
+  return buildPresetResponse({ id: presetId, name, orderIndex: selectPresetByIdStmt.get(presetId).orderIndex });
 });
 
 function savePreset(preset) {
@@ -651,6 +806,25 @@ function deletePreset(id) {
     type: 'preset',
     action: 'delete',
     presetId: id,
+  });
+}
+
+function updatePresetOrder(presetIds) {
+  if (!Array.isArray(presetIds)) {
+    throw new Error('presetIds must be an array');
+  }
+
+  const updateOrder = db.transaction((ids) => {
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      db.prepare('UPDATE presets SET order_index = ? WHERE id = ?;').run(i, id);
+    }
+  });
+
+  updateOrder(presetIds);
+  emitDatabaseChange({
+    type: 'preset',
+    action: 'reorder',
   });
 }
 
@@ -694,6 +868,16 @@ function getSessions({ start, end } = {}) {
   const query = `SELECT id, started_time AS startedTime, finished_time AS finishedTime, source, preset_id AS presetId, notes, actual_duration AS actualDuration, skill_ids AS skillIdsJson FROM sessions ${whereClause} ORDER BY started_time ASC;`;
   const resp = db.prepare(query).all(...params);
   return resp.map(buildSessionResponse);
+}
+
+function getSessionById(id) {
+  const parsed = Number(id);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error('invalid session id');
+  }
+
+  const session = selectSessionByIdStmt.get(parsed);
+  return session ? buildSessionResponse(session) : null;
 }
 
 function getSkillDurationSummary({ from, to } = {}) {
@@ -805,6 +989,30 @@ function saveSession(session) {
     source: session.source,
   });
   return saved;
+}
+
+function deleteSession(id) {
+  const parsed = Number(id);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error('invalid session id');
+  }
+
+  const existing = selectSessionByIdStmt.get(parsed);
+  if (!existing) {
+    throw new Error('session not found');
+  }
+
+  const remove = db.transaction((sessionId) => {
+    deleteSessionBlocksBySessionStmt.run(sessionId);
+    deleteSessionStmt.run(sessionId);
+  });
+
+  remove(parsed);
+  emitDatabaseChange({
+    type: 'session',
+    action: 'delete',
+    sessionId: parsed,
+  });
 }
 
 function clearSessionTables() {
@@ -1027,6 +1235,195 @@ function clearTrainingGoals() {
   });
 }
 
+function encodePresetShare(payload) {
+  const json = JSON.stringify(payload);
+  const compressed = zlib.deflateSync(json);
+  return `${PRESET_SHARE_PREFIX}${compressed.toString('base64')}`;
+}
+
+function decodePresetShare(text) {
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new Error('share text is required');
+  }
+
+  if (!text.startsWith(PRESET_SHARE_PREFIX)) {
+    throw new Error('invalid share payload');
+  }
+
+  const encoded = text.slice(PRESET_SHARE_PREFIX.length);
+  let buffer;
+  try {
+    buffer = Buffer.from(encoded, 'base64');
+  } catch (error) {
+    throw new Error('invalid share payload');
+  }
+
+  let json;
+  try {
+    json = zlib.inflateSync(buffer).toString('utf8');
+  } catch (error) {
+    throw new Error('unable to decode share payload');
+  }
+
+  return JSON.parse(json);
+}
+
+function buildPresetSharePayload(presetId) {
+  const preset = selectPresetByIdStmt.get(presetId);
+  if (!preset) {
+    throw new Error('preset not found');
+  }
+
+  const blocks = selectBlocksStmt.all(presetId);
+  const skillIndexMap = new Map();
+  const skills = [];
+
+  for (const block of blocks) {
+    if (!skillIndexMap.has(block.skillId)) {
+      const skill = selectSkillByIdStmt.get(block.skillId);
+      if (!skill) {
+        throw new Error('skill not found');
+      }
+      skillIndexMap.set(block.skillId, skills.length);
+      skills.push({
+        name: skill.name,
+        category: skill.category ?? null,
+        tags: skill.tags ?? null,
+        notes: skill.notes ?? null,
+        favoriteCode: skill.favoriteCode ?? null,
+        favoriteName: skill.favoriteName ?? null,
+      });
+    }
+  }
+
+  const payloadBlocks = blocks.map((block) => ({
+    skillIndex: skillIndexMap.get(block.skillId),
+    orderIndex: block.orderIndex,
+    type: block.type,
+    durationSeconds: block.durationSeconds,
+    notes: block.notes ?? null,
+  }));
+
+  return {
+    version: PRESET_SHARE_VERSION,
+    preset: {
+      name: preset.name,
+      blocks: payloadBlocks,
+    },
+    skills,
+  };
+}
+
+function sanitizeString(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+}
+
+function resolveSkillIdForSharedDefinition(definition, userId) {
+  const name = sanitizeString(definition?.name);
+  if (!name) {
+    throw new Error('skill name is required');
+  }
+
+  const existing = selectSkillByNameStmt.get(name);
+  if (existing) {
+    return existing.id;
+  }
+
+  const created = upsertSkill({
+    name,
+    category: sanitizeString(definition.category),
+    tags: sanitizeString(definition.tags),
+    notes: sanitizeString(definition.notes),
+    favoriteCode: sanitizeString(definition.favoriteCode),
+    favoriteName: sanitizeString(definition.favoriteName),
+  });
+
+  ensureFavoriteForUser({
+    userId,
+    name: sanitizeString(definition.favoriteName),
+    code: sanitizeString(definition.favoriteCode),
+  });
+
+  return created.id;
+}
+
+function importPresetShare({ share, userId }) {
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('userId is required');
+  }
+  const payload = decodePresetShare(share);
+  if (payload.version !== PRESET_SHARE_VERSION) {
+    throw new Error('unsupported share version');
+  }
+
+  const presetName = sanitizeString(payload.preset?.name);
+  if (!presetName) {
+    throw new Error('preset name is required');
+  }
+
+  const blocks = Array.isArray(payload.preset?.blocks) ? payload.preset.blocks : [];
+  if (!blocks.length) {
+    throw new Error('preset must include at least one block');
+  }
+
+  const skills = Array.isArray(payload.skills) ? payload.skills : [];
+  if (!skills.length) {
+    throw new Error('shared preset must include skill definitions');
+  }
+
+  const normalizedBlocks = blocks.map((block, index) => {
+    const skillIndex = block.skillIndex;
+    if (!Number.isInteger(skillIndex)) {
+      throw new Error('invalid skill reference');
+    }
+
+    if (skillIndex < 0 || skillIndex >= skills.length) {
+      throw new Error('skill reference out of range');
+    }
+
+    const duration = Number(block.durationSeconds ?? 0);
+    const notes = sanitizeString(block.notes);
+    const type = typeof block.type === 'string' && block.type.trim() ? block.type.trim() : 'Block';
+
+    return {
+      skillIndex,
+      orderIndex: Number.isInteger(block.orderIndex) ? block.orderIndex : index,
+      type,
+      durationSeconds: Number.isFinite(duration) ? duration : 0,
+      notes,
+    };
+  });
+
+  const skillIndexToId = new Map();
+  const presetBlocks = normalizedBlocks.map((block) => {
+    let skillId = skillIndexToId.get(block.skillIndex);
+    if (!skillId) {
+      skillId = resolveSkillIdForSharedDefinition(skills[block.skillIndex], userId);
+      skillIndexToId.set(block.skillIndex, skillId);
+    }
+
+    return {
+      orderIndex: block.orderIndex,
+      skillId,
+      type: block.type,
+      durationSeconds: block.durationSeconds,
+      notes: block.notes,
+    };
+  });
+
+  return savePreset({ name: presetName, blocks: presetBlocks });
+}
+
+function exportPresetShare(presetId) {
+  const payload = buildPresetSharePayload(presetId);
+  return encodePresetShare(payload);
+}
+
 ensureProfileSettingsRow();
 
 module.exports = {
@@ -1041,6 +1438,7 @@ module.exports = {
   insertRawMmrRecord,
   getFavoritesByUser,
   addFavoriteForUser,
+  ensureFavoriteForUser,
   clearFavorites,
   getAllSkills,
   upsertSkill,
@@ -1048,10 +1446,15 @@ module.exports = {
   clearSkills,
   getAllPresets,
   savePreset,
+  updatePresetOrder,
+  exportPresetShare,
+  importPresetShare,
   deletePreset,
   clearPresetTables,
   getSessions,
+  getSessionById,
   saveSession,
+  deleteSession,
   clearSessionTables,
   getSkillDurationSummary,
   getProfile,

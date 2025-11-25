@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PresetForm from './presets/PresetForm.svelte';
-  import { getPresets, deletePreset } from './api';
+  import { getPresetShare, importPresetShare, getPresets, deletePreset, updatePresetOrder } from './api';
   import type { Preset } from './api';
   import { useSkills } from './useSkills';
   import { launchPreset } from './stores';
+  import { getBakkesUserId } from './constants';
 
   let presets: Preset[] = [];
   let loading = false;
@@ -17,6 +18,18 @@
   let deleting = false;
 
   const skillsStore = useSkills();
+
+  let shareText = '';
+  let shareLoading = false;
+  let shareError: string | null = null;
+  let importShareText = '';
+  let importLoading = false;
+  let importError: string | null = null;
+  let lastSelectedPresetId: number | null = null;
+  let showImportDialog = false;
+  let showShareDialog = false;
+  let draggedPreset: Preset | null = null;
+  let dragOverIndex: number | null = null;
 
   $: selectedPreset = presets.find((preset) => preset.id === selectedPresetId) ?? null;
   $: skillLookup = Object.fromEntries($skillsStore.skills.map((skill) => [skill.id, skill.name]));
@@ -59,6 +72,73 @@
     }
   }
 
+  async function generateShare() {
+    if (!selectedPreset) return;
+
+    shareError = null;
+    shareLoading = true;
+    shareText = '';
+
+    try {
+      shareText = await getPresetShare(selectedPreset.id);
+    } catch (err) {
+      shareError = err instanceof Error ? err.message : 'Unable to create share text';
+    } finally {
+      shareLoading = false;
+    }
+  }
+
+  async function handleImport(event: SubmitEvent) {
+    event.preventDefault();
+    importError = null;
+    const share = importShareText.trim();
+    if (!share) {
+      importError = 'Paste share text to import';
+      return;
+    }
+
+    importLoading = true;
+    try {
+      const preset = await importPresetShare(share, getBakkesUserId());
+      const successMessage = `Imported “${preset.name}”.`;
+      detailMessage = successMessage;
+      importShareText = '';
+      await refreshPresets(preset.id);
+      selectedPresetId = preset.id;
+      showImportDialog = false;
+    } catch (err) {
+      importError = err instanceof Error ? err.message : 'Unable to import shared preset';
+    } finally {
+      importLoading = false;
+    }
+  }
+
+  function openImportDialog() {
+    importShareText = '';
+    importError = null;
+    showImportDialog = true;
+  }
+
+  function closeImportDialog() {
+    showImportDialog = false;
+    importShareText = '';
+    importError = null;
+    importLoading = false;
+  }
+
+  function openShareDialog() {
+    shareText = '';
+    shareError = null;
+    showShareDialog = true;
+  }
+
+  function closeShareDialog() {
+    showShareDialog = false;
+    shareText = '';
+    shareError = null;
+    shareLoading = false;
+  }
+
   function ensureSelection() {
     if (!selectedPresetId || !presets.some((preset) => preset.id === selectedPresetId)) {
       selectedPresetId = presets[0]?.id ?? null;
@@ -69,6 +149,13 @@
     selectedPresetId = preset.id;
     detailMessage = null;
     deleteError = null;
+  }
+
+  $: if (selectedPreset?.id !== lastSelectedPresetId) {
+    lastSelectedPresetId = selectedPreset?.id ?? null;
+    shareText = '';
+    shareError = null;
+    importError = null;
   }
 
   function openNewPresetForm() {
@@ -138,6 +225,59 @@
     parts.push(`${remainingSeconds}s`);
     return parts.join(' ');
   }
+
+  function handleDragStart(event: DragEvent, preset: Preset) {
+    draggedPreset = preset;
+    event.dataTransfer!.effectAllowed = 'move';
+    event.dataTransfer!.setData('text/plain', preset.id.toString());
+  }
+
+  function handleDragOver(event: DragEvent, index: number) {
+    event.preventDefault();
+    dragOverIndex = index;
+  }
+
+  function handleDragLeave() {
+    dragOverIndex = null;
+  }
+
+  async function handleDrop(event: DragEvent, dropIndex: number) {
+    event.preventDefault();
+    dragOverIndex = null;
+
+    if (!draggedPreset) return;
+
+    const draggedIndex = presets.findIndex(p => p.id === draggedPreset!.id);
+    if (draggedIndex === -1 || draggedIndex === dropIndex) return;
+
+    // Reorder the array
+    const newPresets = [...presets];
+    const [removed] = newPresets.splice(draggedIndex, 1);
+    newPresets.splice(dropIndex, 0, removed);
+
+    presets = newPresets;
+
+    // Update selection if necessary
+    if (selectedPresetId === draggedPreset.id) {
+      selectedPresetId = draggedPreset.id;
+    }
+
+    // Send new order to server
+    try {
+      await updatePresetOrder(newPresets.map(p => p.id));
+    } catch (error) {
+      console.error('Failed to update preset order', error);
+      // Revert on error
+      await refreshPresets();
+    }
+
+    draggedPreset = null;
+  }
+
+  function handleDragEnd() {
+    draggedPreset = null;
+    dragOverIndex = null;
+  }
 </script>
 
 <section class="screen-content presets-shell">
@@ -151,7 +291,6 @@
       <div class="list-header">
         <div>
           <h2>Saved routines</h2>
-          <p>Tap a preset to preview its blocks below.</p>
         </div>
         <div class="list-header-actions">
           <button
@@ -161,7 +300,7 @@
             disabled={!selectedPreset}
             aria-label="Run selected preset"
           >
-            <span aria-hidden="true">▶</span>
+            <i class="fas fa-play" aria-hidden="true"></i>
             <span class="sr-only">Run selected</span>
           </button>
           <button
@@ -170,8 +309,20 @@
             on:click={openNewPresetForm}
             aria-label="Create new preset"
           >
-            <span aria-hidden="true">＋</span>
+            <i class="fas fa-plus" aria-hidden="true"></i>
             <span class="sr-only">New preset</span>
+          </button>
+          <button type="button" class="icon-button" on:click={openShareDialog} disabled={!selectedPreset} aria-label="Share preset">
+            <i class="fas fa-share" aria-hidden="true"></i>
+            <span class="sr-only">Share preset</span>
+          </button>
+          <button type="button" class="icon-button" on:click={openImportDialog} aria-label="Import shared preset">
+            <i class="fas fa-download" aria-hidden="true"></i>
+            <span class="sr-only">Import shared preset</span>
+          </button>
+          <button type="button" class="icon-button" on:click={handleDelete} disabled={!selectedPreset || deleting} aria-label="Delete preset">
+            <i class="fas fa-times" aria-hidden="true"></i>
+            <span class="sr-only">Delete preset</span>
           </button>
         </div>
       </div>
@@ -184,8 +335,19 @@
         <p class="form-error">No presets yet. Use the form to build a routine.</p>
       {:else}
         <ul>
-          {#each presets as preset}
-            <li>
+          {#each presets as preset, index}
+            <li
+              draggable="true"
+              on:dragstart={(e) => handleDragStart(e, preset)}
+              on:dragend={handleDragEnd}
+              on:dragover={(e) => handleDragOver(e, index)}
+              on:dragleave={handleDragLeave}
+              on:drop={(e) => handleDrop(e, index)}
+              class:drag-over={dragOverIndex === index}
+            >
+              <div class="drag-handle" aria-label="Drag to reorder">
+                <i class="fas fa-grip-vertical" aria-hidden="true"></i>
+              </div>
               <button
                 type="button"
                 class:selected={preset.id === selectedPresetId}
@@ -219,62 +381,92 @@
           <PresetForm preset={editingPreset} on:saved={handleSaved} />
         {/key}
       </div>
-
-      <div class="preset-detail glass-card">
-        <div class="detail-header">
-          <div>
-            <h2>Preset preview</h2>
-            <p>Block durations, skill focus, and notes render here as you select a preset.</p>
-          </div>
-          {#if selectedPreset}
-            <div class="detail-actions">
-              <button type="button" class="button-soft" on:click={openEditingPreset}>Edit</button>
-              <button
-                type="button"
-                class="button-neon"
-                on:click={runPreset}
-              >
-                Run preset
-              </button>
-              <button type="button" class="btn-primary" on:click={handleDelete} disabled={deleting}>
-                {#if deleting}Deleting…{:else}Delete preset{/if}
-              </button>
-            </div>
-          {/if}
-        </div>
-
-        {#if detailMessage}
-          <p class="form-success detail-message">{detailMessage}</p>
-        {/if}
-        {#if deleteError}
-          <p class="form-error detail-message">{deleteError}</p>
-        {/if}
-
-        {#if selectedPreset}
-          <p class="preset-meta">{selectedPreset.blocks.length} block{selectedPreset.blocks.length === 1 ? '' : 's'}</p>
-          <ul class="block-breakdown">
-            {#each selectedPreset.blocks as block, index}
-              <li>
-                <div class="block-row">
-                  <span class="block-index">{index + 1}</span>
-                  <div>
-                    <p class="block-type">{block.type}</p>
-                    <p class="block-skill">{skillLookup[block.skillId] ?? `Skill ${block.skillId}`}</p>
-                  </div>
-                  <span class="block-duration">{formatPresetDuration(block.durationSeconds)}</span>
-                </div>
-                {#if block.notes}
-                  <p class="block-notes">{block.notes}</p>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-        {:else if !loading}
-          <p class="form-error">Select a preset to see the breakpoints.</p>
-        {/if}
-      </div>
     </div>
   </div>
+{#if showImportDialog}
+  <div class="import-dialog-backdrop" role="presentation" on:click|self={closeImportDialog}>
+    <div
+      class="import-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="import-dialog-title"
+      tabindex="-1"
+    >
+      <header class="import-dialog-header">
+        <h3 id="import-dialog-title">Import a shared routine</h3>
+        <button type="button" class="icon-button" aria-label="Close import dialog" on:click={closeImportDialog}>
+          ×
+        </button>
+      </header>
+      <p>
+        Paste a share string and the server will recreate the preset and any missing skills (notes and tags included).
+      </p>
+      <form class="import-form" on:submit|preventDefault={handleImport}>
+        <label>
+          <span>
+            <span class="share-icon" aria-hidden="true">🔗</span>
+            Shared text
+          </span>
+          <textarea
+            rows="4"
+            bind:value={importShareText}
+            placeholder="Paste a share string here"
+            aria-label="Shared text"
+          ></textarea>
+        </label>
+        <div class="import-actions">
+          <button type="submit" class="button-secondary" disabled={importLoading}>
+            {#if importLoading}Importing…{:else}Import preset{/if}
+          </button>
+        </div>
+        {#if importError}
+          <p class="form-error">{importError}</p>
+        {/if}
+      </form>
+    </div>
+  </div>
+{/if}
+{#if showShareDialog}
+  <div class="share-dialog-backdrop" role="presentation" on:click|self={closeShareDialog}>
+    <div
+      class="share-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="share-dialog-title"
+      tabindex="-1"
+    >
+      <header class="share-dialog-header">
+        <h3 id="share-dialog-title">Share preset</h3>
+        <button type="button" class="icon-button" aria-label="Close share dialog" on:click={closeShareDialog}>
+          ×
+        </button>
+      </header>
+      <p>
+        Create a single text blob (shareable via pastebin or chat) that re-creates this routine and all referenced skills.
+      </p>
+      <div class="share-actions">
+        <button
+          type="button"
+          class="button-secondary"
+          on:click={generateShare}
+          disabled={shareLoading}
+          aria-label="Generate share text"
+        >
+          {#if shareLoading}Generating…{:else}Generate share text{/if}
+        </button>
+      </div>
+      {#if shareError}
+        <p class="form-error">{shareError}</p>
+      {:else if shareText}
+        <label class="share-output">
+          <span>Share string</span>
+          <textarea rows="3" readonly bind:value={shareText}></textarea>
+        </label>
+      {/if}
+    </div>
+  </div>
+{/if}
+
 </section>
 
 <style>
@@ -296,8 +488,8 @@
 
   .list-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 1rem;
   }
 
@@ -305,6 +497,7 @@
     display: flex;
     align-items: center;
     gap: 0.35rem;
+    margin-bottom: 1rem;
   }
 
   .icon-button {
@@ -377,6 +570,36 @@
     box-shadow: 0 0 25px rgba(99, 102, 241, 0.2);
   }
 
+  .preset-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .drag-handle {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    cursor: grab;
+    flex-shrink: 0;
+  }
+
+  .drag-handle:active {
+    cursor: grabbing;
+  }
+
+  .preset-list li.drag-over {
+    background: rgba(99, 102, 241, 0.1);
+    border-radius: 12px;
+  }
+
+  .preset-list li button {
+    flex: 1;
+  }
+
   .preset-detail-panel {
     display: flex;
     flex-direction: column;
@@ -397,71 +620,111 @@
     flex-wrap: wrap;
   }
 
-  .detail-header {
+  .import-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    justify-content: center;
+    z-index: 10;
   }
 
-  .detail-actions {
-    display: flex;
-    gap: 0.5rem;
+  .import-dialog {
+    background: rgba(8, 12, 20, 0.95);
+    border-radius: 16px;
+    padding: 1.25rem;
+    width: min(420px, 90vw);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
-  .preset-meta {
-    color: var(--text-muted);
-    margin-top: 0;
-    margin-bottom: 0.75rem;
-  }
-
-  .block-breakdown {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .block-row {
+  .import-dialog-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    margin-bottom: 0.5rem;
   }
 
-  .block-row p {
-    margin: 0;
+  .import-dialog textarea {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(15, 23, 42, 0.8);
+    color: #fff;
+    font-family: inherit;
+    padding: 0.65rem;
+    font-size: 0.9rem;
+    resize: vertical;
   }
 
-  .block-index {
-    font-weight: 600;
-    min-width: 2rem;
-    text-align: center;
-  }
-
-  .block-type {
-    font-weight: 600;
-  }
-
-  .block-skill {
-    color: var(--text-muted);
-    font-size: 0.85rem;
-  }
-
-  .block-duration {
-    font-weight: 600;
-  }
-
-  .block-notes {
-    margin: 0.25rem 0 0;
+  .import-form label span {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.35rem;
     font-size: 0.85rem;
     color: var(--text-muted);
   }
 
-  .detail-message {
-    margin: 0.5rem 0 0;
+  .import-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .share-icon {
+    font-size: 1rem;
+  }
+
+  .share-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+
+  .share-dialog {
+    background: rgba(8, 12, 20, 0.95);
+    border-radius: 16px;
+    padding: 1.25rem;
+    width: min(420px, 90vw);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .share-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+
+  .share-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+  }
+
+  .share-output textarea {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(15, 23, 42, 0.8);
+    color: #fff;
+    font-family: inherit;
+    padding: 0.65rem;
+    font-size: 0.9rem;
+    resize: vertical;
+  }
+
+  .share-output span {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
   }
 
   @media (max-width: 960px) {

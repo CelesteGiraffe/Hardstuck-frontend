@@ -6,6 +6,8 @@
   import { profileStore } from './profileStore';
   import type { Preset, PresetBlock, SessionBlockPayload, SessionPayload } from './api';
 
+  export let audioEnabled = true;
+
   const formatDuration = (seconds = 0) => {
     const totalSeconds = Math.max(0, Math.round(seconds));
     const minutes = Math.floor(totalSeconds / 60);
@@ -20,10 +22,6 @@
 
   const PROGRESS_RADIUS = 70;
   const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
-  const STORAGE_KEYS = {
-    audio: 'timer-audio-cues',
-    vibration: 'timer-vibration-cues',
-  } as const;
 
   let timerId: number | null = null;
   let currentBlockIndex = 0;
@@ -32,7 +30,7 @@
   let sessionComplete = false;
   let sessionStartTime: number | null = null;
   let sessionEndTime: number | null = null;
-  let cuePreferences = { audio: true, vibration: true };
+  let cuePreferences = { audio: true };
   let lastPresetId: number | null = null;
   let blockOverrides: Record<number, { remaining?: string; actual?: string }> = {};
   let blockNotes: Record<number, string> = {};
@@ -161,7 +159,6 @@
   }
 
   onMount(() => {
-    loadCuePreferences();
     if (hasPreset) {
       remainingSeconds = presetBlocks[0]?.durationSeconds ?? 0;
     }
@@ -254,29 +251,9 @@
     }
   }
 
-  function loadCuePreferences() {
-    if (typeof localStorage === 'undefined') return;
-    const storedAudio = localStorage.getItem(STORAGE_KEYS.audio);
-    const storedVibration = localStorage.getItem(STORAGE_KEYS.vibration);
-    cuePreferences = {
-      audio: storedAudio === null ? true : storedAudio === 'true',
-      vibration: storedVibration === null ? true : storedVibration === 'true',
-    };
-  }
-
-  function setCuePreference(type: 'audio' | 'vibration', value: boolean) {
-    cuePreferences = { ...cuePreferences, [type]: value };
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS[type], String(value));
-    }
-  }
-
   function triggerCues() {
-    if (cuePreferences.audio) {
+    if (audioEnabled) {
       playAudioCue();
-    }
-    if (cuePreferences.vibration && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate([120, 80, 120]);
     }
   }
 
@@ -364,17 +341,6 @@
 </script>
 
 <main class="screen-shell timer-shell">
-  <section class="screen-content timer-hero glass-card">
-    <div>
-      <p class="hero-accent">Focused training</p>
-  <h1 class="glow-heading">Preset Runner</h1>
-      <p class="section-copy">
-        Queue up a preset to guide focused repetitions, sync your aims, and stay on the neon path.
-      </p>
-    </div>
-    <span class="hero-chip">Ready</span>
-  </section>
-
   <section class="screen-content preset-summary glass-card">
     {#if hasPreset}
       <header class="preset-summary-header">
@@ -492,26 +458,6 @@
             >
               Skip
             </button>
-          </div>
-          <div class="timer-cues">
-            <label class="cue-toggle">
-              <input
-                type="checkbox"
-                data-testid="audio-toggle"
-                checked={cuePreferences.audio}
-                on:change={(event) => setCuePreference('audio', event.currentTarget.checked)}
-              />
-              Audio cues
-            </label>
-            <label class="cue-toggle">
-              <input
-                type="checkbox"
-                data-testid="vibration-toggle"
-                checked={cuePreferences.vibration}
-                on:change={(event) => setCuePreference('vibration', event.currentTarget.checked)}
-              />
-              Vibration cues
-            </label>
           </div>
           {#if activeBlock}
             <div class="override-group">
@@ -705,23 +651,6 @@
     display: flex;
     flex-direction: column;
     gap: clamp(1rem, 1.5vw, 1.75rem);
-  }
-
-  .timer-hero {
-    background: linear-gradient(135deg, rgba(249, 115, 211, 0.18), rgba(99, 102, 241, 0.25));
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 1rem;
-  }
-
-  .hero-chip {
-    padding: 0.35rem 0.9rem;
-    border-radius: 999px;
-    border: 1px solid rgba(249, 115, 211, 0.6);
-    background: rgba(249, 115, 211, 0.2);
-    color: #fff;
-    font-size: 0.8rem;
   }
 
   .preset-summary {
@@ -1009,19 +938,6 @@
     flex-wrap: wrap;
   }
 
-  .cue-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.85rem;
-    color: var(--text-muted);
-  }
-
-  .cue-toggle input {
-    width: 1rem;
-    height: 1rem;
-  }
-
   .blocks-section {
     display: flex;
     flex-direction: column;
@@ -1161,10 +1077,6 @@
   }
 
   @media (max-width: 640px) {
-    .timer-hero {
-      flex-direction: column;
-    }
-
     .timer-panel-inner {
       flex-direction: column;
       align-items: stretch;

@@ -119,3 +119,36 @@ describe('DELETE /api/mmr', () => {
     expect(all.body.length).toBe(0);
   });
 });
+
+describe('DELETE /api/mmr/clear', () => {
+  it('removes every mmr log and reports the deleted count', async () => {
+    const payloads = [
+      {
+        timestamp: '2025-11-13T00:00:00Z',
+        playlist: 'Casual',
+        mmr: 1900,
+        gamesPlayedDiff: 1,
+        source: 'manual',
+      },
+      {
+        timestamp: '2025-11-13T01:00:00Z',
+        playlist: 'Ranked 2v2',
+        mmr: 2100,
+        gamesPlayedDiff: 2,
+        source: 'manual',
+      },
+    ];
+
+    for (const payload of payloads) {
+      const resp = await request(app).post('/api/mmr-log').send(payload).set('Content-Type', 'application/json');
+      expect(resp.statusCode).toBe(201);
+    }
+
+    const clear = await request(app).delete('/api/mmr/clear');
+    expect(clear.statusCode).toBe(200);
+    expect(clear.body).toHaveProperty('deleted', payloads.length);
+
+    const all = await request(app).get('/api/mmr');
+    expect(all.body).toHaveLength(0);
+  });
+});

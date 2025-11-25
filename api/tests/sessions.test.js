@@ -100,3 +100,46 @@ describe('POST /api/sessions', () => {
     expect(sessionsList.body).toHaveLength(0);
   });
 });
+
+describe('DELETE /api/sessions/:id', () => {
+  it('removes a session and its blocks', async () => {
+    const payload = {
+      startedTime: '2025-11-15T08:00:00Z',
+      source: 'timer',
+      blocks: [
+        {
+          type: 'focus',
+          skillIds: [1],
+          plannedDuration: 120,
+          actualDuration: 110,
+        },
+      ],
+    };
+
+    const createResponse = await request(app)
+      .post('/api/sessions')
+      .send(payload)
+      .set('Content-Type', 'application/json');
+
+    expect(createResponse.statusCode).toBe(201);
+    const sessionId = createResponse.body.id;
+
+    const deleteResponse = await request(app).delete(`/api/sessions/${sessionId}`);
+    expect(deleteResponse.statusCode).toBe(204);
+
+    const listResponse = await request(app).get('/api/sessions');
+    expect(listResponse.body).toHaveLength(0);
+  });
+
+  it('returns 404 when the session does not exist', async () => {
+    const response = await request(app).delete('/api/sessions/999');
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toEqual({ error: 'session not found' });
+  });
+
+  it('validates the session id parameter', async () => {
+    const response = await request(app).delete('/api/sessions/not-a-number');
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'invalid session id' });
+  });
+});

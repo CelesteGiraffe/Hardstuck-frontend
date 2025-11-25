@@ -81,3 +81,7 @@ Example:
 ```
 
 This pattern keeps UI components focused on presentation while the shared stores keep data fresh, surface errors, and simplify the unit tests.
+
+## Training packs (Skills screen)
+
+The Skills screen now contains a small "Training packs" section — a simple, local list where you can add training pack names one-by-one for quick reference while managing skills. Training packs are stored locally in the browser (localStorage) and are meant for personal reference only.

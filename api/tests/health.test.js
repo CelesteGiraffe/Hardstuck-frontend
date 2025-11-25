@@ -267,7 +267,7 @@ describe('skills endpoints', () => {
       .set('Content-Type', 'application/json');
 
     expect(post.statusCode).toBe(201);
-    expect(post.body).toMatchObject(payload);
+    expect(post.body).toMatchObject({ ...payload, trainingPacks: [] });
     expect(post.body.id).toBeDefined();
 
     const get = await request(app).get('/api/skills');
@@ -279,6 +279,7 @@ describe('skills endpoints', () => {
         category: payload.category,
         tags: payload.tags,
         notes: payload.notes,
+        trainingPacks: [],
       }),
     ]);
   });
@@ -296,7 +297,65 @@ describe('skills endpoints', () => {
       .set('Content-Type', 'application/json');
 
     expect(updated.statusCode).toBe(201);
-    expect(updated.body).toMatchObject({ id: post.body.id, name: 'Rotation', category: 'Teamplay' });
+    expect(updated.body).toMatchObject({
+      id: post.body.id,
+      name: 'Rotation',
+      category: 'Teamplay',
+      trainingPacks: [],
+    });
+  });
+
+  it('saves training packs with uppercase codes and lists them with skills', async () => {
+    const response = await request(app)
+      .post('/api/skills')
+      .send({
+        name: 'Aerial Control',
+        trainingPacks: [
+          { name: 'Air Dribble Routine', code: 'abcd-1234-efgh-5678' },
+          { name: 'Ceiling Shots', code: 'ZXCV-9876-ASDF-5432' },
+        ],
+      })
+      .set('Content-Type', 'application/json');
+
+    expect(response.statusCode).toBe(201);
+    expect(response.body.trainingPacks).toEqual([
+      expect.objectContaining({ name: 'Air Dribble Routine', code: 'ABCD-1234-EFGH-5678', orderIndex: 0 }),
+      expect.objectContaining({ name: 'Ceiling Shots', code: 'ZXCV-9876-ASDF-5432', orderIndex: 1 }),
+    ]);
+
+    const list = await request(app).get('/api/skills');
+    expect(list.statusCode).toBe(200);
+    expect(list.body[0].trainingPacks).toEqual([
+      expect.objectContaining({ name: 'Air Dribble Routine', code: 'ABCD-1234-EFGH-5678', orderIndex: 0 }),
+      expect.objectContaining({ name: 'Ceiling Shots', code: 'ZXCV-9876-ASDF-5432', orderIndex: 1 }),
+    ]);
+
+    const updated = await request(app)
+      .post('/api/skills')
+      .send({
+        id: response.body.id,
+        name: 'Aerial Control',
+        trainingPacks: [{ name: 'Double Tap Warmup', code: 'TAPS-1234-GOAL-5678' }],
+      })
+      .set('Content-Type', 'application/json');
+
+    expect(updated.statusCode).toBe(201);
+    expect(updated.body.trainingPacks).toEqual([
+      expect.objectContaining({ name: 'Double Tap Warmup', code: 'TAPS-1234-GOAL-5678', orderIndex: 0 }),
+    ]);
+  });
+
+  it('rejects training packs with invalid codes', async () => {
+    const response = await request(app)
+      .post('/api/skills')
+      .send({
+        name: 'Backboard Clears',
+        trainingPacks: [{ name: 'Bad Code', code: '1234-ABCD' }],
+      })
+      .set('Content-Type', 'application/json');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.error).toContain('trainingPacks[0].code must match');
   });
 
   it('rejects skill requests without a name', async () => {

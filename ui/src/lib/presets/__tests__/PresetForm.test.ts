@@ -31,6 +31,7 @@ describe('PresetForm', () => {
       .mockResolvedValue({
         id: 1,
         name: 'Focus routine',
+        orderIndex: 0,
         blocks: [
           { id: 1, presetId: 1, orderIndex: 0, skillId: skills[0].id, type: 'Drill', durationSeconds: 120, notes: null },
         ],

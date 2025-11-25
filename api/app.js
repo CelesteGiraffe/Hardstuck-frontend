@@ -7,14 +7,20 @@ const {
   deleteMmrLog,
   updateMmrLog,
   deleteMmrLogs,
+  clearMmrLogs,
   getAllSkills,
   upsertSkill,
   deleteSkill,
+  ensureFavoriteForUser,
   getAllPresets,
   savePreset,
+  updatePresetOrder,
+  exportPresetShare,
+  importPresetShare,
   deletePreset,
   getSessions,
   saveSession,
+  deleteSession,
   getSkillDurationSummary,
   getProfile,
   updateProfile,
@@ -71,6 +77,24 @@ function limitHistory(records, limit) {
   return records.slice(-limit);
 }
 
+function escapeCsvValue(value) {
+  const text = value === null || value === undefined ? '' : String(value);
+  if (/"|,|\n/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function buildMmrExportCsv(records) {
+  const header = ['MMR Playlist', 'Timestamp', 'MMR', 'Games Played Diff', 'Source'];
+  const lines = [header.map(escapeCsvValue).join(',')];
+  for (const record of records) {
+    const row = [record.playlist, record.timestamp, record.mmr ?? '', record.gamesPlayedDiff ?? '', record.source ?? ''];
+    lines.push(row.map(escapeCsvValue).join(','));
+  }
+  return lines.join('\n');
+}
+
 function broadcastServerUpdate(payload) {
   const payloadWithTimestamp = {
     ...payload,
@@ -94,6 +118,74 @@ if (typeof onChange === 'function') {
 app.use(express.json());
 
 const { normalizePlaylist } = require('./playlist-normalize');
+
+function normalizeHeader(value) {
+  return (value || '').trim().toLowerCase();
+}
+
+function parseCsvLine(line) {
+  const cells = [];
+  let buffer = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        buffer += '"';
+        i += 1;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      cells.push(buffer);
+      buffer = '';
+      continue;
+    }
+
+    buffer += char;
+  }
+
+  cells.push(buffer);
+  return cells.map((cell) => cell.trim());
+}
+
+function extractMmrRowsFromCsv(csvText) {
+  const lines = csvText.split(/\r?\n/);
+  const parsed = lines.map((line, index) => ({
+    row: parseCsvLine(line),
+    lineNumber: index + 1,
+  }));
+
+  const headerIndex = parsed.findIndex(({ row }) => normalizeHeader(row[0]) === 'mmr playlist');
+  if (headerIndex === -1) {
+    return { error: 'CSV must include an MMR section with header' };
+  }
+
+  const mmrRows = [];
+  for (let i = headerIndex + 1; i < parsed.length; i += 1) {
+    const { row, lineNumber } = parsed[i];
+    if (!row.length) {
+      continue;
+    }
+
+    const firstCell = normalizeHeader(row[0]);
+    if (firstCell === 'session date' || firstCell === 'mmr playlist') {
+      break;
+    }
+
+    if (row.every((cell) => cell === '')) {
+      continue;
+    }
+
+    mmrRows.push({ row, lineNumber });
+  }
+
+  return { mmrRows };
+}
 
 app.get('/api/health', (_, res) => {
   res.json({ ok: true });
@@ -176,6 +268,84 @@ app.get('/api/bakkesmod/history', (req, res) => {
   }
 });
 
+app.get('/api/history/export', (req, res) => {
+  const { playlist, from, to } = req.query;
+
+  try {
+    const records = getMmrLogs({ playlist, from, to });
+    const csv = buildMmrExportCsv(records);
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    return res.send(csv);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to export history';
+    return res.status(400).json({ error: message });
+  }
+});
+
+app.post('/api/history/import', (req, res) => {
+  const csvText = typeof req.body?.csv === 'string' ? req.body.csv.trim() : '';
+
+  if (!csvText) {
+    return res.status(400).json({ error: 'CSV text is required' });
+  }
+
+  const parsed = extractMmrRowsFromCsv(csvText);
+  if (parsed.error) {
+    return res.status(400).json({ error: parsed.error });
+  }
+
+  const { mmrRows } = parsed;
+  const summary = { imported: 0, skipped: 0, errors: [] };
+
+  for (const { row, lineNumber } of mmrRows) {
+    const [playlistValue, timestampValue, mmrValue, gamesPlayedDiffValue, sourceValue] = row;
+    if (!playlistValue) {
+      summary.errors.push(`Line ${lineNumber}: playlist is required`);
+      continue;
+    }
+
+    const normalizedPlaylist = normalizePlaylist(playlistValue);
+    if (!normalizedPlaylist) {
+      summary.errors.push(`Line ${lineNumber}: unsupported playlist`);
+      continue;
+    }
+
+    const timestamp = (timestampValue || '').trim();
+    if (!timestamp || Number.isNaN(Date.parse(timestamp))) {
+      summary.errors.push(`Line ${lineNumber}: invalid timestamp`);
+      continue;
+    }
+
+    const mmrNumber = Number(mmrValue);
+    if (!Number.isFinite(mmrNumber)) {
+      summary.errors.push(`Line ${lineNumber}: mmr must be a number`);
+      continue;
+    }
+
+    const gamesDiff = Number(gamesPlayedDiffValue ?? '');
+    if (!Number.isFinite(gamesDiff)) {
+      summary.errors.push(`Line ${lineNumber}: gamesPlayedDiff must be a number`);
+      continue;
+    }
+
+    const inserted = saveMmrLog({
+      timestamp,
+      playlist: normalizedPlaylist,
+      mmr: mmrNumber,
+      gamesPlayedDiff: gamesDiff,
+      source: (sourceValue || '').trim() || 'bakkes',
+    });
+
+    if (inserted) {
+      summary.imported += 1;
+    } else {
+      summary.skipped += 1;
+    }
+  }
+
+  return res.json(summary);
+});
+
 app.post('/api/mmr-log', (req, res) => {
   const { timestamp, playlist, mmr, gamesPlayedDiff, source } = req.body;
   const errors = [];
@@ -219,6 +389,16 @@ app.post('/api/mmr-log', (req, res) => {
 app.get('/api/mmr', (req, res) => {
   const { playlist, from, to } = req.query;
   res.json(getMmrLogs({ playlist, from, to }));
+});
+
+app.delete('/api/mmr/clear', (_, res) => {
+  try {
+    const deleted = clearMmrLogs();
+    res.status(200).json({ deleted });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to clear mmr records';
+    res.status(500).json({ error: message });
+  }
 });
 
 app.delete('/api/mmr/:id', (req, res) => {
@@ -295,7 +475,10 @@ app.patch('/api/mmr/:id', (req, res) => {
   }
 });
 
-app.delete('/api/mmr', (req, res) => {
+app.delete('/api/mmr', (req, res, next) => {
+  if (req.path !== '/api/mmr') {
+    return next();
+  }
   const { playlist, from, to } = req.query;
 
   if (!playlist && !from && !to) {
@@ -315,14 +498,57 @@ app.get('/api/skills', (_, res) => {
   res.json(getAllSkills());
 });
 
+const TRAINING_PACK_CODE_PATTERN = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+
+function normalizeTrainingPacksPayload(packs) {
+  if (packs === undefined) {
+    return { normalized: [], errors: [] };
+  }
+
+  if (!Array.isArray(packs)) {
+    return { normalized: [], errors: ['trainingPacks must be an array'] };
+  }
+
+  const errors = [];
+  const normalized = [];
+
+  packs.forEach((pack, index) => {
+    const name = typeof pack?.name === 'string' ? pack.name.trim() : '';
+    const codeInput = typeof pack?.code === 'string' ? pack.code.trim().toUpperCase() : '';
+
+    if (!name) {
+      errors.push(`trainingPacks[${index}].name is required`);
+    }
+
+    if (!codeInput) {
+      errors.push(`trainingPacks[${index}].code is required`);
+    } else if (!TRAINING_PACK_CODE_PATTERN.test(codeInput)) {
+      errors.push(`trainingPacks[${index}].code must match XXXX-XXXX-XXXX-XXXX using A-Z or 0-9`);
+    }
+
+    if (name && codeInput && TRAINING_PACK_CODE_PATTERN.test(codeInput)) {
+      normalized.push({ name, code: codeInput });
+    }
+  });
+
+  return { normalized, errors };
+}
+
 app.post('/api/skills', (req, res) => {
-  const { id, name, category, tags, notes } = req.body;
+  const { id, name, category, tags, notes, favoriteCode, favoriteName, trainingPacks } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: 'name is required' });
   }
 
-  const skill = upsertSkill({ id, name, category, tags, notes });
+  const { normalized: normalizedTrainingPacks, errors } = normalizeTrainingPacksPayload(trainingPacks);
+  if (errors.length > 0) {
+    return res.status(400).json({ error: errors.join('. ') });
+  }
+
+  const skill = upsertSkill({ id, name, category, tags, notes, favoriteCode, favoriteName, trainingPacks: normalizedTrainingPacks });
+  const userId = (req.header('x-user-id') || '').trim();
+  ensureFavoriteForUser({ userId, name: favoriteName, code: favoriteCode });
   res.status(201).json(skill);
 });
 
@@ -383,6 +609,63 @@ app.delete('/api/presets/:id', (req, res) => {
 
   try {
     deletePreset(presetId);
+    res.status(204).end();
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/presets/:id/share', (req, res) => {
+  const presetId = Number(req.params.id);
+
+  if (!Number.isInteger(presetId) || presetId <= 0) {
+    return res.status(400).json({ error: 'invalid preset id' });
+  }
+
+  try {
+    const share = exportPresetShare(presetId);
+    res.json({ share });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to generate share text';
+    res.status(400).json({ error: message });
+  }
+});
+
+app.post('/api/presets/share/import', (req, res) => {
+  const shareText = typeof req.body?.share === 'string' ? req.body.share.trim() : '';
+  if (!shareText) {
+    return res.status(400).json({ error: 'share text is required' });
+  }
+
+  const userId = (req.header('x-user-id') || '').trim();
+  if (!userId) {
+    return res.status(401).json({ error: 'X-User-Id header is required' });
+  }
+
+  try {
+    const preset = importPresetShare({ share: shareText, userId });
+    res.status(201).json({ preset });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to import shared preset';
+    res.status(400).json({ error: message });
+  }
+});
+
+app.put('/api/presets/order', (req, res) => {
+  const { presetIds } = req.body;
+
+  if (!Array.isArray(presetIds)) {
+    return res.status(400).json({ error: 'presetIds must be an array' });
+  }
+
+  for (const id of presetIds) {
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'presetIds must contain positive integers' });
+    }
+  }
+
+  try {
+    updatePresetOrder(presetIds);
     res.status(204).end();
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -558,6 +841,23 @@ app.post('/api/sessions', (req, res) => {
     res.status(201).json(saved);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/sessions/:id', (req, res) => {
+  const sessionId = Number(req.params.id);
+
+  if (!Number.isInteger(sessionId) || sessionId <= 0) {
+    return res.status(400).json({ error: 'invalid session id' });
+  }
+
+  try {
+    deleteSession(sessionId);
+    res.status(204).end();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to delete session';
+    const status = message === 'session not found' ? 404 : 400;
+    res.status(status).json({ error: message });
   }
 });
 
