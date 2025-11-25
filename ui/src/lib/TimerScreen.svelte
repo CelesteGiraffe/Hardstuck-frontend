@@ -341,17 +341,6 @@
 </script>
 
 <main class="screen-shell timer-shell">
-  <section class="screen-content timer-hero glass-card">
-    <div>
-      <p class="hero-accent">Focused training</p>
-  <h1 class="glow-heading">Preset Runner</h1>
-      <p class="section-copy">
-        Queue up a preset to guide focused repetitions, sync your aims, and stay on the neon path.
-      </p>
-    </div>
-    <span class="hero-chip">Ready</span>
-  </section>
-
   <section class="screen-content preset-summary glass-card">
     {#if hasPreset}
       <header class="preset-summary-header">
@@ -662,23 +651,6 @@
     display: flex;
     flex-direction: column;
     gap: clamp(1rem, 1.5vw, 1.75rem);
-  }
-
-  .timer-hero {
-    background: linear-gradient(135deg, rgba(249, 115, 211, 0.18), rgba(99, 102, 241, 0.25));
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 1rem;
-  }
-
-  .hero-chip {
-    padding: 0.35rem 0.9rem;
-    border-radius: 999px;
-    border: 1px solid rgba(249, 115, 211, 0.6);
-    background: rgba(249, 115, 211, 0.2);
-    color: #fff;
-    font-size: 0.8rem;
   }
 
   .preset-summary {
@@ -1105,10 +1077,6 @@
   }
 
   @media (max-width: 640px) {
-    .timer-hero {
-      flex-direction: column;
-    }
-
     .timer-panel-inner {
       flex-direction: column;
       align-items: stretch;
