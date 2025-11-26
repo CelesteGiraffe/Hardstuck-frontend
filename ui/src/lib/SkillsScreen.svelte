@@ -194,13 +194,27 @@
     editTrainingPacks = editTrainingPacks.filter((pack) => pack.key !== key);
   }
 
-  async function copyTrainingPackCode(code: string) {
+  // track which pack was recently copied so the UI can show transient feedback
+  let copiedPack: number | string | null = null;
+  let _copyTimeout: number | null = null;
+
+  async function copyTrainingPackCode(code: string, packId?: number | string) {
     if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
       return;
     }
 
     try {
       await navigator.clipboard.writeText(code);
+
+      // show temporary feedback on the button that was clicked
+      if (_copyTimeout) {
+        window.clearTimeout(_copyTimeout as unknown as number);
+      }
+      copiedPack = packId ?? code;
+      _copyTimeout = window.setTimeout(() => {
+        copiedPack = null;
+        _copyTimeout = null;
+      }, 1500);
     } catch (error) {
       console.error('Unable to copy training pack code', error);
     }
@@ -447,12 +461,13 @@
                               </div>
                               <button
                                 type="button"
-                                class="button-copy"
+                                class="icon-button inline button-soft {copiedPack === pack.id ? 'copied' : ''}"
                                 title="Copy code"
                                 aria-label={`Copy ${pack.name} code`}
-                                on:click={() => copyTrainingPackCode(pack.code)}
+                                on:click={() => copyTrainingPackCode(pack.code, pack.id)}
                               >
-                                Copy
+                                <i class={copiedPack === pack.id ? 'fas fa-check' : 'fas fa-copy'} aria-hidden="true"></i>
+                                <span class="sr-only">Copy {pack.name} code</span>
                               </button>
                             </li>
                           {/each}
@@ -624,6 +639,33 @@
     flex-wrap: wrap;
   }
 
+  /* inline icon variant used inside list items next to the small code text */
+  .training-item .icon-button.inline {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(15, 23, 42, 0.55);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.5rem;
+  }
+
+  .training-item .icon-button.inline i {
+    font-size: 0.85rem;
+  }
+
+  .training-item .icon-button.inline.copied {
+    border-color: var(--accent, #8b5cf6);
+    background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(99,102,241,0.18));
+    box-shadow: 0 6px 18px rgba(99,102,241,0.14);
+    transform: translateY(-1px);
+    color: #fff;
+  }
+
   .training-meta {
     display: flex;
     flex-direction: column;
@@ -639,10 +681,7 @@
     opacity: 0.85;
   }
 
-  .button-copy {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.85rem;
-  }
+  
 
   .skill-training-packs {
     margin-top: 0.75rem;

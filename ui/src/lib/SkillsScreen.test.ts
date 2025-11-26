@@ -174,4 +174,36 @@ describe('SkillsScreen actions', () => {
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(baseSkill.id));
     expect(refreshSpy).toHaveBeenCalled();
   });
+
+  it('copies a training pack code to the clipboard', async () => {
+    const skillWithPack = {
+      ...baseSkill,
+      trainingPacks: [{ id: 9, name: 'Backboard', code: 'ABCD-1234-EFGH-5678', orderIndex: 0 }],
+    };
+
+    vi.spyOn(api, 'getSkills').mockResolvedValue([skillWithPack]);
+    vi.spyOn(api, 'getBakkesFavorites').mockResolvedValue([]);
+
+    // ensure clipboard is available and spy on writeText
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    // @ts-ignore - JSDOM navigator.clipboard might be missing in test env
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    const { getAllByLabelText } = render(SkillsScreen);
+
+    // wait for the list to render and then click the copy button
+    await waitFor(() => getAllByLabelText('Copy Backboard code'));
+    const copyBtn = getAllByLabelText('Copy Backboard code')[0];
+
+    // should use the site icon button variant and our inline modifier
+    expect(copyBtn.classList.contains('icon-button')).toBe(true);
+    expect(copyBtn.classList.contains('inline')).toBe(true);
+    await fireEvent.click(copyBtn);
+
+    // clipboard written
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('ABCD-1234-EFGH-5678'));
+
+    // immediately show transient 'copied' feedback on the button
+    expect(copyBtn.classList.contains('copied')).toBe(true);
+  });
 });

@@ -7,6 +7,8 @@
   import type { Preset, PresetBlock, SessionBlockPayload, SessionPayload } from './api';
 
   export let audioEnabled = true;
+  // callback provided by App to toggle the global audio preference so both UI locations stay in sync
+  export let setAudioPreference: (value: boolean) => void = () => {};
 
   const formatDuration = (seconds = 0) => {
     const totalSeconds = Math.max(0, Math.round(seconds));
@@ -351,9 +353,22 @@
             {blockCount} block{blockCount === 1 ? '' : 's'} · {formatDuration(totalPlanned)} planned
           </p>
         </div>
-        <div class="preset-summary-types">
+        <div class="preset-summary-right">
+          <div class="preset-summary-types">
           <span class="meta-label">Block types</span>
           <strong>{blockTypes.join(', ') || '—'}</strong>
+          </div>
+          <div class="preset-summary-actions">
+            <button
+              type="button"
+              class="icon-button"
+              on:click={() => setAudioPreference(!audioEnabled)}
+              aria-label={audioEnabled ? 'Mute audio cues' : 'Unmute audio cues'}
+            >
+              <i class="fas {audioEnabled ? 'fa-volume-up' : 'fa-volume-mute'}" aria-hidden="true"></i>
+              <span class="sr-only">{audioEnabled ? 'Mute' : 'Unmute'} audio cues</span>
+            </button>
+          </div>
         </div>
       </header>
       <div class="preset-summary-meta">
@@ -665,6 +680,33 @@
     align-items: flex-start;
     gap: 1rem;
     flex-wrap: wrap;
+  }
+
+  .preset-summary-right {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .preset-summary-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .preset-summary-actions .icon-button {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(15, 23, 42, 0.8);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: #fff;
+    padding: 0;
   }
 
   .preset-summary-meta {

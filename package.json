@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "start": "concurrently \"npm run start --prefix api\" \"npm run dev --prefix ui -- --host\"",
+    "dev:start": "node ./tools/dev-start.js",
     "test": "npm run test:api && npm run test:full && npm run check:ui",
     "test:api": "npm run test --prefix api",
     "test:ui": "npm run test:base --prefix ui",

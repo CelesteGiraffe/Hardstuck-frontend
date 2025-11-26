@@ -202,3 +202,25 @@ test('save workflow sends overrides and notes to createSession', async () => {
   expect(payload.notes).toBe('Smooth reps');
   expect(payload.blocks[0].actualDuration).toBe(18);
 });
+
+test('preset runner shows audio toggle and calls setAudioPreference', async () => {
+  const setAudioPreference = vi.fn();
+  // render with audio enabled
+  const { getByLabelText, rerender } = render(TimerScreen, {
+    audioEnabled: true,
+    setAudioPreference,
+  });
+
+  // mute control should be present and labeled to mute
+  const muteBtn = getByLabelText('Mute audio cues');
+  expect(muteBtn).toBeTruthy();
+
+  // clicking should call the supplied setter with the opposite value
+  await fireEvent.click(muteBtn);
+  expect(setAudioPreference).toHaveBeenCalledWith(false);
+
+  // re-render with audio disabled and ensure label updates
+  await rerender({ audioEnabled: false, setAudioPreference });
+  const unmuteBtn = getByLabelText('Unmute audio cues');
+  expect(unmuteBtn).toBeTruthy();
+});
