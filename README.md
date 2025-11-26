@@ -1,4 +1,6 @@
-# Rocket League Training Journal
+# Hardstuck
+
+Rocket League Training Journal
 
 A local-first Rocket League training journal that combines:
 - structured practice timers,

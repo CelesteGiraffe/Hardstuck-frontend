@@ -348,7 +348,7 @@
       <div class="hero-top">
         <div class="hero-intro">
           <div class="section-header">
-            <p class="hero-accent">Rocket League training journal</p>
+            <p class="hero-accent">Rocket League Training Journal</p>
             <h1 class="glow-heading">Home</h1>
             <p>
               Track presets, log quick skills, and compare your minutes to ranked results, all with a neon

@@ -46,7 +46,7 @@ describe('Preset share API', () => {
 
     expect(response.statusCode).toBe(200);
     expect(typeof response.body.share).toBe('string');
-    expect(response.body.share.startsWith('RLTRAINER:PRESET:V1:')).toBe(true);
+    expect(response.body.share.startsWith('HARDSTUCK:PRESET:V1:')).toBe(true);
   });
 
   it('requires X-User-Id when importing', async () => {

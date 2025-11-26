@@ -10,7 +10,7 @@ const db = new Database(dbPath);
 const changeEmitter = new EventEmitter();
 changeEmitter.setMaxListeners(0);
 
-const PRESET_SHARE_PREFIX = 'RLTRAINER:PRESET:V1:';
+const PRESET_SHARE_PREFIX = 'HARDSTUCK:PRESET:V1:';
 const PRESET_SHARE_VERSION = 1;
 
 function emitDatabaseChange(event) {

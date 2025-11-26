@@ -377,7 +377,7 @@ body {
 }
 
 .hero-accent {
-  font-size: 0.95rem;
+  font-size: 0.85rem; /* slightly smaller to match the project subtitle size */
   font-weight: 500;
   color: var(--text-muted);
 }
