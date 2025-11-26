@@ -38,6 +38,9 @@ This project consists of three main parts:
 ### 3. BakkesMod Plugin (C++)
 - Sends MMR snapshots to the API after matches.
 - Provides accurate, automatic “weigh-in” records.
+
+- Plugin source / releases: https://github.com/CelesteGiraffe/RL-Training-Journal
+- Plugin website: (coming soon — placeholder for future BakkesMod plugin website)
 - Helps correlate training with real competitive results.
 
 ---
