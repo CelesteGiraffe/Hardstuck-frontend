@@ -1,4 +1,6 @@
-# Rocket League Training Journal
+# Hardstuck
+
+Rocket League Training Journal
 
 A local-first Rocket League training journal that combines:
 - structured practice timers,
@@ -186,6 +188,23 @@ The UI dev server already proxies `/api` to `http://localhost:4000`, so API call
 
 4. **Verify everything**
   - Run `npm test` from the repo root to execute the API Jest suite and the UI `svelte-check`/TypeScript checks at once.
+
+## Screenshots
+
+Preview of the main app UI (these screenshots are included under `ui/public/screenshots/`):
+
+### Home
+<img src="ui/public/screenshots/home.png" alt="Home screenshot" width="560" />
+
+### History
+<img src="ui/public/screenshots/history.png" alt="History screenshot" width="560" />
+
+### Presets
+<img src="ui/public/screenshots/presets.png" alt="Presets screenshot" width="560" />
+
+### Preset Runner
+<img src="ui/public/screenshots/preset-runner.png" alt="Preset Runner screenshot" width="560" />
+
 
 ## Testing
 

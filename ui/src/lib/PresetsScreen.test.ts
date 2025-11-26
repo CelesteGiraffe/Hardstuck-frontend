@@ -55,7 +55,7 @@ describe.skip('PresetsScreen share workflow', () => {
 
   it('generates a share string', async () => {
     stubPresets();
-    const shareSpy = mockedApi.getPresetShare.mockResolvedValue('RLTRAINER:PRESET:V1:ABC');
+    const shareSpy = mockedApi.getPresetShare.mockResolvedValue('HARDSTUCK:PRESET:V1:ABC');
 
     const { getByLabelText, getByText, findByTestId, findByText } = render(PresetsScreen);
 
@@ -69,6 +69,6 @@ describe.skip('PresetsScreen share workflow', () => {
 
     await waitFor(() => expect(shareSpy).toHaveBeenCalledWith(presets[0].id));
     const output = await findByTestId('share-output') as HTMLTextAreaElement;
-    expect(output.value).toBe('RLTRAINER:PRESET:V1:ABC');
+    expect(output.value).toBe('HARDSTUCK:PRESET:V1:ABC');
   });
 });

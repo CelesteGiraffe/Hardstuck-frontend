@@ -27,7 +27,7 @@ describe('homeCache', () => {
   });
 
   it('drops entries that use an outdated version', () => {
-    const storageKey = '@rl-trainer/dashboard-latest-mmr';
+    const storageKey = '@hardstuck/dashboard-latest-mmr';
     const staleEntry = {
       version: 'old-version',
       timestamp: new Date().toISOString(),

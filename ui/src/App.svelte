@@ -38,7 +38,7 @@
     { id: 'profile', label: 'Profile', component: ProfileScreen },
   ];
 
-  const projectTitle = 'RL Trainer 2';
+  const projectTitle = 'Hardstuck';
 
   let checklistOpen = false;
   let lastChecklistSeen = 0;
@@ -116,6 +116,7 @@
       <div class="header-heading">
         <div class="project-title-row">
           <h1 class="project-title">{projectTitle}</h1>
+          <p class="project-subtitle">Rocket League Training Journal</p>
           <span class="status-chip">{activeScreenLabel}</span>
         </div>
         <p class="breadcrumb">
@@ -244,6 +245,15 @@
     align-items: center;
     gap: 1rem;
     width: 100%;
+  }
+
+  /* subtitle/secondary title under the main project title */
+  .project-subtitle {
+    margin: 0.15rem 0 0 0;
+    font-size: 0.85rem; /* slightly smaller than default headings */
+    color: var(--text-muted);
+    font-weight: 500;
+    letter-spacing: 0.2px;
   }
 
   .header-heading {

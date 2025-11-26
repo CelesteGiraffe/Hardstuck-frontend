@@ -1,4 +1,4 @@
-# Project Notes – Rocket League Training Journal
+# Project Notes – Hardstuck — Rocket League Training Journal
 
 ### Purpose
 This project is a Rocket League training journal that tracks:

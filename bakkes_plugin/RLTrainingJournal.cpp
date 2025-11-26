@@ -53,7 +53,7 @@ static inline void SafeStrCopy(char* dest, const std::string& src, size_t destSi
 }
 
 // Re-enable SDK plugin registration macro when building with the BakkesMod SDK
-BAKKESMOD_PLUGIN(RLTrainingJournalPlugin, "RL Training Journal", "1.0", PERMISSION_ALL)
+BAKKESMOD_PLUGIN(RLTrainingJournalPlugin, "Hardstuck", "1.0", PERMISSION_ALL)
 
 namespace
 {
@@ -152,7 +152,7 @@ void RLTrainingJournalPlugin::onLoad()
     DiagnosticLogger::Log("onLoad: complete");
     if (cvarManager)
     {
-        cvarManager->log("RL Training Journal plugin loaded");
+        cvarManager->log("Hardstuck plugin loaded");
     }
 }
 
@@ -182,7 +182,7 @@ void RLTrainingJournalPlugin::RegisterCVars()
         return;
     }
 
-    auto baseUrl = cvarManager->registerCvar(kBaseUrlCvarName, kDefaultBaseUrl, "Base URL for the RL Training Journal API");
+    auto baseUrl = cvarManager->registerCvar(kBaseUrlCvarName, kDefaultBaseUrl, "Base URL for the Hardstuck API");
 
     auto forceLocalhost = cvarManager->registerCvar(kForceLocalhostCvarName, "1", "Force uploads to http://localhost:4000");
     try {
@@ -735,7 +735,7 @@ void RLTrainingJournalPlugin::Render()
     }
 
     DiagnosticLogger::Log("Render: calling ImGui::Begin");
-    bool beginResult = ImGui::Begin("RL Training Journal##overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    bool beginResult = ImGui::Begin("Hardstuck — Rocket League Training Journal##overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
     DiagnosticLogger::Log(std::string("Render: ImGui::Begin returned ") + (beginResult ? "true" : "false"));
     if (!beginResult)
     {
@@ -743,7 +743,7 @@ void RLTrainingJournalPlugin::Render()
         return;
     }
 
-    ImGui::TextWrapped("Uploads match summaries to the Rocket League Training Journal API.");
+    ImGui::TextWrapped("Uploads match summaries to the Hardstuck (Rocket League Training Journal) API.");
     if (!lastResponse.empty())
     {
         ImGui::TextWrapped("Last response: %s", lastResponse.c_str());
@@ -782,7 +782,7 @@ void RLTrainingJournalPlugin::RenderSettings()
         return;
     }
 
-    ImGui::TextUnformatted("Configure where Rocket League Training Journal uploads are sent.");
+    ImGui::TextUnformatted("Configure where Hardstuck uploads are sent.");
 
     static char baseUrlBuf[256] = {0};
     static char userIdBuf[128] = {0};
@@ -919,7 +919,7 @@ void RLTrainingJournalPlugin::RenderSettings()
 
 std::string RLTrainingJournalPlugin::GetPluginName()
 {
-    return "RL Training Journal";
+    return "Hardstuck";
 }
 
 std::string RLTrainingJournalPlugin::GetMenuName()
@@ -929,7 +929,7 @@ std::string RLTrainingJournalPlugin::GetMenuName()
 
 std::string RLTrainingJournalPlugin::GetMenuTitle()
 {
-    return "RL Training Journal"; // title shown in the BakkesMod menu
+    return "Hardstuck"; // title shown in the BakkesMod menu
 }
 
 void RLTrainingJournalPlugin::SetImGuiContext(uintptr_t ctx)

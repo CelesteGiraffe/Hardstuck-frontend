@@ -7,10 +7,10 @@ type CacheEntry<T> = {
 };
 
 const CACHE_KEYS = {
-  presets: '@rl-trainer/dashboard-presets',
-  skillSummary: '@rl-trainer/dashboard-skill-summary',
-  minutesToday: '@rl-trainer/dashboard-minutes',
-  latestMmr: '@rl-trainer/dashboard-latest-mmr',
+  presets: '@hardstuck/dashboard-presets',
+  skillSummary: '@hardstuck/dashboard-skill-summary',
+  minutesToday: '@hardstuck/dashboard-minutes',
+  latestMmr: '@hardstuck/dashboard-latest-mmr',
 } as const;
 
 const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
