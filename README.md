@@ -194,16 +194,16 @@ The UI dev server already proxies `/api` to `http://localhost:4000`, so API call
 Preview of the main app UI (these screenshots are included under `ui/public/screenshots/`):
 
 ### Home
-![Home screenshot](ui/public/screenshots/home.png)
+<img src="ui/public/screenshots/home.png" alt="Home screenshot" width="560" />
 
 ### History
-![History screenshot](ui/public/screenshots/history.png)
+<img src="ui/public/screenshots/history.png" alt="History screenshot" width="560" />
 
 ### Presets
-![Presets screenshot](ui/public/screenshots/presets.png)
+<img src="ui/public/screenshots/presets.png" alt="Presets screenshot" width="560" />
 
 ### Preset Runner
-![Preset Runner screenshot](ui/public/screenshots/preset-runner.png)
+<img src="ui/public/screenshots/preset-runner.png" alt="Preset Runner screenshot" width="560" />
 
 
 ## Testing
