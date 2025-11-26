@@ -189,6 +189,23 @@ The UI dev server already proxies `/api` to `http://localhost:4000`, so API call
 4. **Verify everything**
   - Run `npm test` from the repo root to execute the API Jest suite and the UI `svelte-check`/TypeScript checks at once.
 
+## Screenshots
+
+Preview of the main app UI (these screenshots are included under `ui/public/screenshots/`):
+
+### Home
+![Home screenshot](ui/public/screenshots/home.png)
+
+### History
+![History screenshot](ui/public/screenshots/history.png)
+
+### Presets
+![Presets screenshot](ui/public/screenshots/presets.png)
+
+### Preset Runner
+![Preset Runner screenshot](ui/public/screenshots/preset-runner.png)
+
+
 ## Testing
 
 Run everything with a single command from the project root:
