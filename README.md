@@ -154,6 +154,14 @@ Alternatively, run both components with one command:
 npm start
 ```
 
+If you want a convenience script that installs missing deps, starts both servers and opens the UI in your browser, use the new cross-platform helper:
+
+```bash
+npm run dev:start
+
+Note: the helper will ensure the repo root dependencies (e.g. `concurrently`) plus `api/` and `ui/` are installed if they're missing before it starts the servers.
+```
+
 This uses `concurrently` to launch the API server and the Vite dev server together so you can test the entire stack while developing.
 
 The UI dev server already proxies `/api` to `http://localhost:4000`, so API calls work without extra configuration.

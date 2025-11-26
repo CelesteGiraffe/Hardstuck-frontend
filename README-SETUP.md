@@ -50,6 +50,38 @@ The shell script accepts these optional flags:
 
 If you prefer to run steps manually, continue to the manual instructions below.
 
+## Quick dev start (new)
+
+To make starting both the API + UI dev servers easier on both macOS and Windows, this repo includes a small cross-platform helper at `tools/dev-start.js` and two simple wrappers:
+
+- macOS / Linux: `./run-dev.sh`
+- Windows PowerShell: `.\run-dev.ps1`
+
+The helper will:
+- check for Node and npm on PATH and show helpful install hints if missing
+- run `npm install` in the repo root, and in `api/` and `ui/` if dependencies are missing
+- start the dev servers (root `npm start` runs both API and UI)
+- open the UI in your default browser (http://localhost:5173 by default)
+
+From project root you can now run:
+
+POSIX (macOS / Linux):
+```bash
+./run-dev.sh
+```
+
+Windows PowerShell:
+```pwsh
+pwsh ./run-dev.ps1
+```
+
+Or use the new npm script which does the same thing and is cross-platform:
+```bash
+npm run dev:start
+```
+
+This is intended as an ergonomic way to get both dev servers running and a browser opened — the root `start` script still uses `concurrently` like before.
+
 **Manual: Fetch Dear ImGui (required for plugin build)**
 The repository does not commit Dear ImGui. If you don't use the root setup script, clone it into `bakkes_plugin/third_party/imgui`.
 
