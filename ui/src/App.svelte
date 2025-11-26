@@ -230,7 +230,7 @@
 
   <main class="screen-shell">
     {#if $activeScreenId === 'presetRunner'}
-      <TimerScreen {audioEnabled} />
+      <TimerScreen {audioEnabled} setAudioPreference={setAudioPreference} />
     {:else}
       <svelte:component this={ActiveScreen} />
     {/if}
