@@ -39,7 +39,8 @@ This project consists of three main parts:
 - Sends MMR snapshots to the API after matches.
 - Provides accurate, automatic “weigh-in” records.
 
-- Plugin source / releases: [Source](https://github.com/CelesteGiraffe/Hardstuck) [Bakkes Page]()
+- Plugin [Source](https://github.com/CelesteGiraffe/Hardstuck) 
+- Releases: [Bakkes Page]()
 - Plugin website: (coming soon — placeholder for future BakkesMod plugin website)
 - Helps correlate training with real competitive results.
 
