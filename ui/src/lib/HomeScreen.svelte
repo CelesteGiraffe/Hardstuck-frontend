@@ -410,8 +410,6 @@
             BakkesMod page (pending)
           </a>
         </div>
-          Install plugin
-        </a>
       </div>
     </section>
 
