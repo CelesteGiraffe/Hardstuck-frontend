@@ -83,8 +83,10 @@ run_npm_install() {
 
 # By default install root, ui, api unless --no-install
 if [[ $NO_INSTALL -eq 0 ]]; then
+	# Track whether installs succeeded. Use a boolean-style string and update to 'false'
+	# if any install fails. (Avoid arithmetic on non-numeric values which breaks under
+	# 'set -u' if an identifier is mistaken for a variable name.)
 	ok=true
-	ok=$(( ok & $? )) || true
 	run_npm_install "$ROOT" || ok=false
 	run_npm_install "$ROOT/ui" || ok=false
 	run_npm_install "$ROOT/api" || ok=false

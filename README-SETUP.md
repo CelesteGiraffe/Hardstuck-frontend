@@ -52,6 +52,17 @@ POSIX (macOS / Linux):
 ./setup-and-run.command  # macOS one-click entrypoint (double-click in Finder)
 ```
 
+Tip for macOS users: If double-clicking the `.command` file doesn't run, ensure it has execute permission and is opened by Terminal. From the repo root you can make it executable with:
+
+```bash
+chmod +x ./setup-and-run.command
+```
+Then run it from Terminal if needed:
+
+```bash
+./setup-and-run.command
+```
+
 The shell script accepts these optional flags (POSIX):
 - `--no-install` : skip npm installs in root/ui/api
 - `--build-plugin` : run CMake & build the native plugin in `bakkes_plugin`

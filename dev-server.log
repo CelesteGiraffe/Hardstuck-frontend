@@ -1,0 +1,35 @@
+npm warn Unknown env config "target-arch". This will stop working in the next major version of npm.
+npm warn Unknown env config "arch". This will stop working in the next major version of npm.
+npm warn Unknown user config "python". This will stop working in the next major version of npm.
+npm warn Unknown user config "cmake_minimum_required". This will stop working in the next major version of npm.
+
+> hardstuck@1.0.0 start
+> concurrently "npm run start --prefix api" "npm run dev --prefix ui -- --host"
+
+[0] npm warn Unknown env config "target-arch". This will stop working in the next major version of npm.
+[0] npm warn Unknown env config "python". This will stop working in the next major version of npm.
+[0] npm warn Unknown env config "arch". This will stop working in the next major version of npm.
+[0] npm warn Unknown env config "cmake-minimum-required". This will stop working in the next major version of npm.
+[0] npm warn Unknown user config "python". This will stop working in the next major version of npm.
+[0] npm warn Unknown user config "cmake_minimum_required". This will stop working in the next major version of npm.
+[1] npm warn Unknown env config "target-arch". This will stop working in the next major version of npm.
+[1] npm warn Unknown env config "python". This will stop working in the next major version of npm.
+[1] npm warn Unknown env config "arch". This will stop working in the next major version of npm.
+[1] npm warn Unknown env config "cmake-minimum-required". This will stop working in the next major version of npm.
+[1] npm warn Unknown user config "python". This will stop working in the next major version of npm.
+[1] npm warn Unknown user config "cmake_minimum_required". This will stop working in the next major version of npm.
+[0] 
+[0] > api@1.0.0 start
+[0] > node server.js
+[0] 
+[1] 
+[1] > ui@0.0.0 dev
+[1] > vite --host
+[1] 
+[0] API server listening on http://localhost:4000
+[1] 04:18:03 [vite] (client) Forced re-optimization of dependencies
+[1] 
+[1]   VITE v7.2.2  ready in 439 ms
+[1] 
+[1]   ➜  Local:   http://localhost:5173/
+[1]   ➜  Network: http://192.168.1.236:5173/
