@@ -34,14 +34,25 @@ function Run-NpmInstall([string]$folder) {
     Show-Info ("Running npm install in {0}..." -f ${folder})
     Push-Location $folder
     try {
-        $proc = Start-Process -FilePath npm -ArgumentList 'install' -NoNewWindow -Wait -PassThru -ErrorAction Stop
-        if ($proc.ExitCode -eq 0) {
+        # On Windows, running 'npm' via Start-Process can fail due to how cmd shims are handled.
+        # Use cmd /c npm install on Windows; otherwise call npm directly.
+        $runningOnWindows = ($env:OS -eq 'Windows_NT') -or ($PSVersionTable.Platform -match 'Win')
+        if ($runningOnWindows) {
+            & cmd /c npm install
+            $exit = $LASTEXITCODE
+        }
+        else {
+            & npm install
+            $exit = $LASTEXITCODE
+        }
+
+        if ($exit -eq 0) {
             Show-Success ("Dependencies installed in: {0}" -f ${folder})
             Pop-Location
             return $true
         }
         else {
-            Show-Error ("npm install failed in {0} (exit {1})." -f ${folder}, $proc.ExitCode)
+            Show-Error ("npm install failed in {0} (exit {1})." -f ${folder}, $exit)
             Pop-Location
             return $false
         }
@@ -99,11 +110,19 @@ if ($successRoot -and $successUI -and $successAPI) {
     Show-Info "Starting development servers (running 'npm start' from root)."
     Push-Location $root
         try {
-        # Start npm start in a new window/process so we can continue to open the browser.
-        $startProc = Start-Process -FilePath npm -ArgumentList 'start' -WorkingDirectory $root -PassThru -ErrorAction Stop
-        Show-Info ("Started 'npm start' (PID {0}). Waiting a few seconds for servers to come up..." -f $startProc.Id)
+        # Start npm start in a new process. On Windows use cmd.exe /c to avoid exe/shim issues.
+        $runningOnWindows = ($env:OS -eq 'Windows_NT') -or ($PSVersionTable.Platform -match 'Win')
+        if ($runningOnWindows) {
+            $startProc = Start-Process -FilePath $env:ComSpec -ArgumentList '/c npm start' -WorkingDirectory $root -PassThru -ErrorAction Stop
+            # ComSpec spawns cmd.exe which will have its own PID; report the PID of the process we started.
+            Show-Info ("Started 'npm start' (PID {0}). Waiting a few seconds for servers to come up..." -f $startProc.Id)
+        }
+        else {
+            $startProc = Start-Process -FilePath npm -ArgumentList 'start' -WorkingDirectory $root -PassThru -ErrorAction Stop
+            Show-Info ("Started 'npm start' (PID {0}). Waiting a few seconds for servers to come up..." -f $startProc.Id)
+        }
     }
-        catch {
+    catch {
         Show-Error ("Failed to start 'npm start': {0}" -f $_.Exception.Message)
         Pop-Location
         exit 1
