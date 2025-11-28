@@ -2,6 +2,12 @@
 
 This file contains quick, copy-paste steps to get a developer environment ready for building and testing the BakkesMod plugin and the repo's other parts. It focuses on the minimal steps required to fetch Dear ImGui (uncommitted), configure the plugin, build it, and deploy the minimal runtime artifacts into `bakkes_plugin/deploy/`.
 
+Plugin links:
+- Source / install (GitHub): https://github.com/CelesteGiraffe/Hardstuck
+- BakkesMod page (placeholder): https://bakkesmod.org/plugins/Hardstuck
+
+If the BakkesMod site entry is not yet live, the second link serves as a temporary stub until the listing is approved and hosted on the BakkesMod plugin directory.
+
 **Prerequisites**
 - Git
 - CMake (>= 3.18)
@@ -13,8 +19,8 @@ If you use Windows + Visual Studio, open the "x64 Native Tools Command Prompt" o
 
 **1) Clone repo (example)**
 ```pwsh
-git clone https://github.com/CelesteGiraffe/RL-Trainer-2.git
-cd RL-Trainer-2
+git clone https://github.com/CelesteGiraffe/Hardstuck.git
+cd Hardstuck
 ```
 
 **2) Install node deps (optional; for UI/API work)**

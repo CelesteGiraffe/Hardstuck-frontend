@@ -22,7 +22,7 @@
     weeklySkillSummaryQuery,
   } from './queries';
   import { pushChecklistSnapshot } from './checklistState';
-  import { pluginInstallUrl } from './constants';
+  import { pluginSourceUrl, pluginBakkesPage } from './constants';
   import type { ChecklistItem } from './checklistState';
   import {
     formatGoalEtaLabel,
@@ -402,7 +402,14 @@
           <p id="plugin-install-heading" class="cta-title">MMR plugin</p>
           <p class="cta-copy">Install BakkesMod to sync match data automatically.</p>
         </div>
-        <a class="button-soft cta-link" href={pluginInstallUrl} target="_blank" rel="noreferrer">
+        <div style="display:flex; gap:.5rem; align-items:center;">
+          <a class="button-soft cta-link" href={pluginSourceUrl} target="_blank" rel="noreferrer" title="Source / install guide on GitHub">
+            Install plugin (source)
+          </a>
+          <a class="button-soft cta-link" href={pluginBakkesPage} target="_blank" rel="noreferrer" title="BakkesMod plugin page (placeholder)">
+            BakkesMod page (pending)
+          </a>
+        </div>
           Install plugin
         </a>
       </div>

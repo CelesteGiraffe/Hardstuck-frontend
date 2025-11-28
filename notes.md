@@ -4,8 +4,8 @@
 This project is a Rocket League training journal that tracks:
 - the skills I practise,
 - the routines and timers I use,
-- the details of each training session,
-- and my real in-game MMR via a BakkesMod plugin.
+-- the details of each training session,
+-- and my real in-game MMR via a BakkesMod plugin (source: https://github.com/CelesteGiraffe/Hardstuck — plugin page stub: https://bakkesmod.org/plugins/Hardstuck).
 
 The idea is similar to a weight journal:
 - training = exercise,
@@ -31,6 +31,8 @@ The project is split into three simple, understandable parts:
    - Only communicates with the API for data.
 
 3. **BakkesMod Plugin**
+   - Source / releases: https://github.com/CelesteGiraffe/Hardstuck
+   - BakkesMod page (placeholder): https://bakkesmod.org/plugins/Hardstuck
    - Written in C++ for BakkesMod.
    - After each match, it posts the current MMR and playlist to the API.
    - Provides automatic “weigh-in” data.

@@ -12,7 +12,7 @@
   import OfflineBanner from './lib/components/OfflineBanner.svelte';
   import { activeScreenId, navigateTo, clearSelectedPreset } from './lib/stores';
   import { setupChecklistState } from './lib/checklistState';
-  import { pluginInstallUrl } from './lib/constants';
+  import { pluginSourceUrl, pluginBakkesPage } from './lib/constants';
   import { profileStore } from './lib/profileStore';
   import { profilePlaylistStore } from './lib/profilePlaylistStore';
   import { formatPlaylistDisplay } from './lib/playlistDisplay';
@@ -211,9 +211,14 @@
           </p>
           <p class="checklist-cache">{checklistSnapshot.cacheNote}</p>
           <div class="checklist-actions">
-            <a class="button-link" href={pluginInstallUrl} target="_blank" rel="noreferrer">
-              Plugin installation guide
-            </a>
+            <div style="display:flex; gap: .5rem; align-items:center;">
+              <a class="button-link" href={pluginSourceUrl} target="_blank" rel="noreferrer" title="Source / install guide on GitHub">
+                Plugin (source)
+              </a>
+              <a class="button-soft cta-link" href={pluginBakkesPage} target="_blank" rel="noreferrer" title="BakkesMod plugin page (placeholder)">
+                BakkesMod page (pending)
+              </a>
+            </div>
             <button
               type="button"
               class="icon-button"

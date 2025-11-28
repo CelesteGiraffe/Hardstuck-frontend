@@ -6,7 +6,7 @@ A local-first Rocket League training journal that combines:
 - structured practice timers,
 - skill tracking,
 - training session logs,
-- and automatic MMR updates from a BakkesMod plugin.
+- and automatic MMR updates from a BakkesMod plugin (source: https://github.com/CelesteGiraffe/Hardstuck — plugin page stub: https://bakkesmod.org/plugins/Hardstuck).
 
 The goal is to treat Rocket League improvement like a fitness program: track training (input) and compare it to ranked results (output).
 
@@ -39,9 +39,10 @@ This project consists of three main parts:
 - Sends MMR snapshots to the API after matches.
 - Provides accurate, automatic “weigh-in” records.
 
-- Plugin [Source](https://github.com/CelesteGiraffe/Hardstuck) 
-- Releases: [Bakkes Page]()
-- Plugin website: (coming soon — placeholder for future BakkesMod plugin website)
+- Plugin [Source](https://github.com/CelesteGiraffe/Hardstuck)
+- Plugin page on BakkesMod (placeholder): [https://bakkesmod.org/plugins/Hardstuck](https://bakkesmod.org/plugins/Hardstuck)
+  
+  _Note:_ the BakkesMod site entry may not be live yet — the link above is a stub until approval/hosting is available.
 - Helps correlate training with real competitive results.
 
 ---
@@ -67,7 +68,7 @@ Avoid unnecessary frameworks, generated file forests, or cloud dependencies. Eve
 - Log all actual durations and session notes.
 
 ### MMR Tracking
-- Automatic MMR logging from BakkesMod plugin.
+- Automatic MMR logging from BakkesMod plugin (source: https://github.com/CelesteGiraffe/Hardstuck — plugin page stub: https://bakkesmod.org/plugins/Hardstuck).
 - Manual MMR logging if needed.
 - SQLite storage for all match results.
 
@@ -80,7 +81,7 @@ Avoid unnecessary frameworks, generated file forests, or cloud dependencies. Eve
 - Import a shared string to rehydrate the preset along with every referenced skill (notes, tags, and BakkesMod favorite links are recreated per user).
 
 ### Plugin API contract
-The BakkesMod plugin calls the local API to report ranked matches. The endpoint expects a single POST request per match to `/api/mmr-log`.
+The BakkesMod plugin calls the local API to report ranked matches (source: https://github.com/CelesteGiraffe/Hardstuck — BakkesMod page with details: https://bakkesmod.org/plugins/Hardstuck). The endpoint expects a single POST request per match to `/api/mmr-log`.
 
 - **URL:** `http://localhost:4000/api/mmr-log` (adjust the port via `PORT` if you host the API elsewhere).
 - **Headers:** `Content-Type: application/json`
@@ -152,7 +153,7 @@ Each part is kept small and isolated so the project is easy to maintain.
    - install dependencies
    - run the dev server in a browser
 
-3. (Later) Enable the BakkesMod plugin to start sending MMR logs automatically.
+3. (Later) Enable the BakkesMod plugin (see source and plugin page links above) to start sending MMR logs automatically.
 
 Alternatively, run both components with one command:
 
