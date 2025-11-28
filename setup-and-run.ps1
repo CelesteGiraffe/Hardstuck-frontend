@@ -14,9 +14,11 @@ function Show-Error([string]$s){ Write-Host $s -ForegroundColor Red }
 
 Show-Info "Repository root: $root"
 
-# check for node (which implies npm available)
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Show-Error "Node.js is not installed or not on PATH. Get it from https://nodejs.org/"
+# check for node and npm
+$node = Get-Command node -ErrorAction SilentlyContinue
+$npm  = Get-Command npm  -ErrorAction SilentlyContinue
+if (-not $node -or -not $npm) {
+    Show-Error "Node.js and/or npm are not installed or not on PATH. Install Node.js (includes npm) from https://nodejs.org/"
     exit 1
 }
 
