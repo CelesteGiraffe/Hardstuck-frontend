@@ -70,7 +70,7 @@ if ($successRoot -and $successUI -and $successAPI) {
     Show-Success 'All three dependency checks passed. Proceeding to start the project.'
 
     if ($DryRun) {
-        Show-Info 'Dry run requested — not starting servers or opening a browser.'
+        Show-Info 'Dry run requested - not starting servers or opening a browser.'
         Show-Info ('Would run: npm start in {0}; open http://localhost:{1} in browser (unless -NoBrowser).' -f $root, $UIPort)
         exit 0
     }
@@ -92,7 +92,7 @@ if ($successRoot -and $successUI -and $successAPI) {
                 Pop-Location
             }
         }
-        else { Show-Info "No bakkes_plugin folder found — skipping plugin build." }
+        else { Show-Info 'No bakkes_plugin folder found - skipping plugin build.' }
     }
 
     # Start the dev server using root npm start (same as previous workflow)
