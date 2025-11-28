@@ -43,12 +43,17 @@ The PowerShell script accepts these optional switches:
 
 POSIX (macOS / Linux):
 ```bash
-./setup.sh
+./setup-and-run.sh
 ```
 
-The shell script accepts these optional flags:
-- `--no-fetch-imgui`
-- `--no-npm`
+The shell script accepts these optional flags (POSIX):
+- `--no-install` : skip npm installs in root/ui/api
+- `--build-plugin` : run CMake & build the native plugin in `bakkes_plugin`
+- `--no-browser` : do not open the browser after starting servers
+- `--dry-run` : validate environment and installs only; don't start servers or open browser
+- `--ui-port <port>` : UI port to open in browser (default: 5173)
+- `--api-port <port>` : API port (default: 4000)
+- `--no-fetch-imgui` : don't clone Dear ImGui into `bakkes_plugin/third_party/imgui`
 
 If you prefer to run steps manually, continue to the manual instructions below.
 
@@ -56,7 +61,7 @@ If you prefer to run steps manually, continue to the manual instructions below.
 
 To make starting both the API + UI dev servers easier on both macOS and Windows, this repo includes a small cross-platform helper at `tools/dev-start.js` and two simple wrappers:
 
--- macOS / Linux: `./run-dev.sh`
+-- macOS / Linux: `./run-dev.sh` (dev-server only) or `./setup-and-run.sh` for combined install+build+run
 -- Windows PowerShell: use the all-in-one `setup-and-run.ps1` below or the platform wrappers in tools as appropriate
 
 The helper will:
