@@ -39,6 +39,7 @@ The PowerShell script accepts these optional switches:
 - `-NoInstall` : skip running `npm install` in root/ui/api
 - `-BuildPlugin` : run CMake & build the native plugin in `bakkes_plugin`
 - `-NoBrowser` : do not open the browser after starting servers
+- `-DryRun` : validate environment and installs only; don't start servers or open browser
 
 POSIX (macOS / Linux):
 ```bash

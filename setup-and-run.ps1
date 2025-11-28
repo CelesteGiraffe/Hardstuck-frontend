@@ -2,6 +2,7 @@ param(
     [switch]$NoInstall,
     [switch]$BuildPlugin,
     [switch]$NoBrowser,
+    [switch]$DryRun,
     [int]$UIPort = 5173,
     [int]$APIPort = 4000
 )
@@ -67,6 +68,12 @@ if (-not $NoInstall) {
 
 if ($successRoot -and $successUI -and $successAPI) {
     Show-Success 'All three dependency checks passed. Proceeding to start the project.'
+
+    if ($DryRun) {
+        Show-Info 'Dry run requested — not starting servers or opening a browser.'
+        Show-Info ('Would run: npm start in {0}; open http://localhost:{1} in browser (unless -NoBrowser).' -f $root, $UIPort)
+        exit 0
+    }
 
     if ($BuildPlugin) {
         # Optional plugin build step (replicates prior setup.ps1 behavior)
