@@ -28,16 +28,17 @@ cd ..
 ```
 
 **3) Quick setup (recommended)**
-There is a root-level setup script that runs the common onboarding steps (fetches Dear ImGui, runs `npm install` in `ui/` and `api/`, configures and builds the plugin, and copies runtime artifacts into `bakkes_plugin/deploy/`).
+There is a combined root-level setup-and-run script that installs npm deps (root, `ui/`, `api/` by default), optionally builds the native plugin, and can start the dev servers and open the UI in your browser.
 
 PowerShell (Windows):
 ```pwsh
-pwsh .\setup.ps1
+pwsh .\setup-and-run.ps1
 ```
 
 The PowerShell script accepts these optional switches:
-- `-NoFetchImgui` : skip fetching ImGui
-- `-NoNpm` : skip running `npm install` in `ui/` and `api/`
+- `-NoInstall` : skip running `npm install` in root/ui/api
+- `-BuildPlugin` : run CMake & build the native plugin in `bakkes_plugin`
+- `-NoBrowser` : do not open the browser after starting servers
 
 POSIX (macOS / Linux):
 ```bash
@@ -54,8 +55,8 @@ If you prefer to run steps manually, continue to the manual instructions below.
 
 To make starting both the API + UI dev servers easier on both macOS and Windows, this repo includes a small cross-platform helper at `tools/dev-start.js` and two simple wrappers:
 
-- macOS / Linux: `./run-dev.sh`
-- Windows PowerShell: `.\run-dev.ps1`
+-- macOS / Linux: `./run-dev.sh`
+-- Windows PowerShell: use the all-in-one `setup-and-run.ps1` below or the platform wrappers in tools as appropriate
 
 The helper will:
 - check for Node and npm on PATH and show helpful install hints if missing
@@ -70,9 +71,9 @@ POSIX (macOS / Linux):
 ./run-dev.sh
 ```
 
-Windows PowerShell:
+Windows PowerShell / all-in-one:
 ```pwsh
-pwsh ./run-dev.ps1
+pwsh ./setup-and-run.ps1
 ```
 
 Or use the new npm script which does the same thing and is cross-platform:
