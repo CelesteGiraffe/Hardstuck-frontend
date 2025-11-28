@@ -43,7 +43,7 @@ The PowerShell script accepts these optional switches:
 
 POSIX (macOS / Linux):
 ```bash
-./setup-and-run.sh
+./setup-and-run.command  # macOS one-click entrypoint (double-click in Finder)
 ```
 
 The shell script accepts these optional flags (POSIX):
@@ -59,9 +59,9 @@ If you prefer to run steps manually, continue to the manual instructions below.
 
 ## Quick dev start (new)
 
-To make starting both the API + UI dev servers easier on both macOS and Windows, this repo includes a small cross-platform helper at `tools/dev-start.js` and two simple wrappers:
+To make starting both the API + UI dev servers easier on both macOS and Windows, this repo includes a small cross-platform helper at `tools/dev-start.js` and a POSIX wrapper that is now a single file for macOS:
 
--- macOS / Linux: `./run-dev.sh` (dev-server only) or `./setup-and-run.sh` for combined install+build+run
+-- macOS / Linux: `./setup-and-run.command` (single-file combined install+build+run; double-click to run on mac)
 -- Windows PowerShell: use the all-in-one `setup-and-run.ps1` below or the platform wrappers in tools as appropriate
 
 The helper will:
@@ -74,7 +74,8 @@ From project root you can now run:
 
 POSIX (macOS / Linux):
 ```bash
-./run-dev.sh
+# Developer note: run-dev.sh has been consolidated. Use the single entrypoint below:
+./setup-and-run.command
 ```
 
 Windows PowerShell / all-in-one:
